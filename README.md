@@ -40,7 +40,7 @@ Given a user's sparse and implicit viewing history, produce a ranked list of fil
 - **Explainable** — the user can see *why* each item was surfaced,
 - **Robust to cold start** — useful output for a user we have never seen before.
 
-The core difficulty is sparsity. In our dataset the user–item matrix is **⟨TODO: X⟩% dense**, meaning the average user has rated a vanishingly small fraction of the catalog. A system that only memorizes co-occurrence patterns degenerates into recommending blockbusters to everyone.
+The core difficulty is sparsity. In our dataset the user–item matrix is **1.70% dense**, meaning the average user has rated a vanishingly small fraction of the catalog. A system that only memorizes co-occurrence patterns degenerates into recommending blockbusters to everyone.
 
 ---
 
@@ -178,7 +178,7 @@ For each recommendation we return the normalised contribution of each scoring co
 | Tags | 3,683 |
 | Rating scale | 0.5 – 5.0 |
 | Time span | 1996 – 2018 |
-| Density | ⟨TODO⟩% |
+| Density | 1.70% |
 
 **Why this dataset:** it is small enough to deploy on free-tier infrastructure, carries timestamps (enabling a leakage-free temporal split), and includes user-generated tags that give the content model more signal than genres alone.
 
@@ -283,7 +283,7 @@ Interactive docs at `/docs`. Summary:
 ### Split protocol
 **Temporal, per user.** Each user's interactions are sorted by timestamp; the earliest 80% form the training set and the most recent 20% the test set. A random split would let the model observe a user's future when predicting their past, inflating every metric. We report only the temporal numbers.
 
-Users with fewer than 5 interactions are excluded from evaluation (they cannot form a meaningful test set) but remain in training.
+Users with fewer than 5 interactions are excluded from evaluation (they cannot form a meaningful test set) but remain in training. In practice this filter never fires: GroupLens publishes only users with **at least 20 ratings**, so the dataset contains no genuinely cold users. Cold-start quality therefore cannot be measured directly — it is *simulated* by truncating a warm user history to its first *n* items. We report it as such rather than implying we observed real new users.
 
 ### Metrics
 
