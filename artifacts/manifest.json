@@ -1,0 +1,30 @@
+{
+  "built_at": "2026-08-19T12:54:52+00:00",
+  "dataset": "ml-latest-small",
+  "n_users": 610,
+  "n_items": 9742,
+  "n_ratings": 100836,
+  "n_positive": 48580,
+  "positive_threshold": 4.0,
+  "als": {
+    "factors": 64,
+    "regularisation": 0.05,
+    "iterations": 15,
+    "alpha": 40.0
+  },
+  "knn": {
+    "top_k": 50,
+    "items_with_neighbours": 9722
+  },
+  "content": {
+    "model": "sentence-transformers/all-MiniLM-L6-v2",
+    "dim": 384,
+    "n_documents": 9742.0,
+    "pct_with_tags": 16.1,
+    "pct_with_overview": 0.0,
+    "pct_genreless": 0.3,
+    "mean_chars": 65.0
+  },
+  "tmdb_films_cached": 0,
+  "build_seconds": 74.6
+}
