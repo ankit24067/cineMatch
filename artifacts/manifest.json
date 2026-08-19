@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-08-19T12:54:52+00:00",
+  "built_at": "2026-08-19T20:12:01+00:00",
   "dataset": "ml-latest-small",
   "n_users": 610,
   "n_items": 9742,
@@ -21,10 +21,10 @@
     "dim": 384,
     "n_documents": 9742.0,
     "pct_with_tags": 16.1,
-    "pct_with_overview": 0.0,
+    "pct_with_overview": 97.4,
     "pct_genreless": 0.3,
-    "mean_chars": 65.0
+    "mean_chars": 375.7
   },
-  "tmdb_films_cached": 0,
-  "build_seconds": 74.6
+  "tmdb_films_cached": 9598,
+  "build_seconds": 196.3
 }
