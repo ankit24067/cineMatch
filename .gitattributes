@@ -1,0 +1,19 @@
+# Normalise to LF in the repository. The backend is built and run on Linux
+# (Render); CRLF in a shell script or entrypoint breaks it there.
+* text=auto eol=lf
+
+# Windows-only files keep CRLF locally.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Model artifacts are binary — never touch line endings or try to diff them.
+*.npy  binary
+*.npz  binary
+*.parquet binary
+*.onnx binary
+*.png  binary
+*.jpg  binary
+*.docx binary
+
+# Keep notebook diffs readable-ish in review.
+*.ipynb text

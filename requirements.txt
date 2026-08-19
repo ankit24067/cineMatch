@@ -1,0 +1,13 @@
+# Serving dependencies only — no training, no gradients.
+# Kept deliberately small so the Render container stays under the free-tier
+# image limit. See README §14 ("ONNX Runtime instead of PyTorch at serving time").
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+numpy==2.2.1
+scipy==1.15.0
+pandas==2.2.3
+pyarrow==18.1.0
+onnxruntime==1.20.1
+tokenizers==0.21.0
