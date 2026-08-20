@@ -34,7 +34,7 @@ from api.schemas import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    get_service()  # warm the cache; failures surface at boot, not mid-request
+    get_service()
     yield
 
 
@@ -45,8 +45,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# The demo frontend is deployed separately, so it is always cross-origin.
-# Credentials are never sent — there are no accounts and no cookies.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -68,7 +66,7 @@ def _resolve_seeds(service: Service, movie_ids: list[int]) -> tuple[np.ndarray, 
         index = service.catalogue.index_of_movie(movie_id)
         if index is None:
             unknown.append(movie_id)
-        elif index not in indices:  # de-duplicate; a repeated seed is not stronger
+        elif index not in indices:
             indices.append(index)
     return np.asarray(indices, dtype=np.int64), unknown
 
@@ -179,7 +177,6 @@ def recommend(request: RecommendRequest) -> RecommendResponse:
             status_code=422, detail="supply seed_movie_ids, user_id, or both"
         )
 
-    # Seeds win when both are given, so the UI can say "recommend from these".
     seed_override = seeds if seeds.size else None
 
     results = service.recommender.recommend(

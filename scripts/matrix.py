@@ -28,8 +28,8 @@ POSITIVE_THRESHOLD = 4.0
 class IdMaps:
     """Bidirectional MovieLens id <-> contiguous index mappings."""
 
-    user_ids: np.ndarray  # index -> MovieLens userId
-    item_ids: np.ndarray  # index -> MovieLens movieId
+    user_ids: np.ndarray
+    item_ids: np.ndarray
 
     @property
     def n_users(self) -> int:
@@ -97,8 +97,6 @@ def build_rating_matrix(ratings: pd.DataFrame, maps: IdMaps) -> sparse.csr_matri
     rows = ratings["userId"].map(user_index).to_numpy()
     cols = ratings["movieId"].map(item_index).to_numpy()
 
-    # A rating can reference a movieId absent from movies.csv in some MovieLens
-    # editions; drop those rather than silently mis-indexing.
     valid = ~pd.isna(cols)
     if not valid.all():
         print(f"  ! dropping {(~valid).sum()} ratings with unknown movieId")
@@ -129,7 +127,7 @@ def build_confidence_matrix(
     kept.data = np.where(kept.data >= threshold, kept.data, 0.0)
     kept.eliminate_zeros()
 
-    margin = (kept.data - threshold) / (5.0 - threshold)  # 4.0 -> 0.0, 5.0 -> 1.0
+    margin = (kept.data - threshold) / (5.0 - threshold)
     kept.data = (1.0 + alpha * margin).astype(np.float32)
     return kept
 
@@ -144,7 +142,6 @@ def mean_center_rows(matrix: sparse.csr_matrix) -> sparse.csr_matrix:
     centred = matrix.copy().astype(np.float32)
     counts = np.diff(centred.indptr)
     sums = np.add.reduceat(centred.data, centred.indptr[:-1]) if centred.nnz else np.zeros(0)
-    # reduceat misbehaves on empty rows; guard by zeroing their contribution.
     sums = np.where(counts > 0, sums, 0.0)
     means = np.divide(sums, counts, out=np.zeros_like(sums, dtype=np.float64), where=counts > 0)
     centred.data = centred.data - np.repeat(means, counts).astype(np.float32)

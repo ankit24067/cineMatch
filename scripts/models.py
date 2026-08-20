@@ -31,21 +31,18 @@ def item_knn(
     filled with -1 / 0.0 — the caller must treat them as "no CF signal".
     """
     n_items = normalised.shape[1]
-    csr = normalised.T.tocsr()  # items x users
+    csr = normalised.T.tocsr()
 
     idx_out = np.full((n_items, top_k), -1, dtype=np.int32)
     sim_out = np.zeros((n_items, top_k), dtype=np.float32)
 
     for start in range(0, n_items, block):
         stop = min(start + block, n_items)
-        # (block x users) @ (users x items) -> (block x items) cosine scores
         sims = np.asarray((csr[start:stop] @ normalised).todense(), dtype=np.float32)
 
-        # Exclude self-similarity.
         for local, item in enumerate(range(start, stop)):
             sims[local, item] = -np.inf
 
-        # argpartition is O(n) vs a full sort's O(n log n); we only need the top k.
         k = min(top_k, sims.shape[1] - 1)
         part = np.argpartition(-sims, k - 1, axis=1)[:, :k]
         part_scores = np.take_along_axis(sims, part, axis=1)
@@ -53,8 +50,6 @@ def item_knn(
         neighbours = np.take_along_axis(part, order, axis=1)
         scores = np.take_along_axis(part_scores, order, axis=1)
 
-        # Similarity of exactly 0 means "no co-rating evidence", not a weak
-        # neighbour. Mark those slots empty so scoring can skip them.
         scores[~np.isfinite(scores)] = 0.0
         neighbours = np.where(scores > 0, neighbours, -1)
         scores = np.where(scores > 0, scores, 0.0)
@@ -81,7 +76,7 @@ def _solve_side(
     touches that user's observed items — which is what makes this tractable.
     """
     n_factors = fixed.shape[1]
-    gramian = fixed.T @ fixed  # shared YᵀY
+    gramian = fixed.T @ fixed
     lambda_eye = regularisation * np.eye(n_factors, dtype=np.float64)
     out = np.zeros((confidence.shape[0], n_factors), dtype=np.float64)
 
@@ -90,15 +85,12 @@ def _solve_side(
     for row in range(confidence.shape[0]):
         start, stop = indptr[row], indptr[row + 1]
         if start == stop:
-            continue  # no interactions: leave factors at zero
+            continue
         cols = indices[start:stop]
         conf = data[start:stop].astype(np.float64)
 
-        sub = fixed[cols]  # (n_observed x factors)
-        # Yᵀ(C_u − I)Y  — only observed items contribute.
+        sub = fixed[cols]
         correction = sub.T @ (sub * (conf - 1.0)[:, None])
-        # Preference p(u) is 1 wherever an interaction exists, so Yᵀ C_u p(u)
-        # collapses to a confidence-weighted sum of the observed item factors.
         target = sub.T @ conf
 
         out[row] = np.linalg.solve(gramian + correction + lambda_eye, target)
@@ -122,12 +114,11 @@ def als(
     rng = np.random.default_rng(seed)
     n_users, n_items = confidence.shape
 
-    # Small random init; scale keeps the first solve well-conditioned.
     user_factors = rng.normal(0, 0.01, (n_users, n_factors))
     item_factors = rng.normal(0, 0.01, (n_items, n_factors))
 
     confidence_csr = confidence.tocsr()
-    confidence_csc = confidence.T.tocsr()  # items x users
+    confidence_csc = confidence.T.tocsr()
 
     for iteration in range(iterations):
         user_factors = _solve_side(item_factors, confidence_csr, regularisation)

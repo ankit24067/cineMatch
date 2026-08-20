@@ -1,12 +1,3 @@
-/**
- * Typed client for the CineMatch API.
- *
- * The backend returns structured detail on 4xx (`{"detail": "..."}`), so we
- * surface that text rather than a bare status code — a 409 from a deployment
- * without interaction data is a message the user needs to read, not an error
- * to swallow.
- */
-
 import type {
   Evaluation,
   Health,
@@ -38,7 +29,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
     });
   } catch {
-    // fetch only rejects on network failure, never on a 4xx/5xx.
     throw new ApiError(0, `Cannot reach the API at ${BASE}. Is uvicorn running?`);
   }
 
@@ -48,12 +38,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const body = await response.json();
       if (typeof body?.detail === "string") detail = body.detail;
       else if (Array.isArray(body?.detail)) {
-        // Pydantic validation errors arrive as a list of objects.
         detail = body.detail.map((e: { msg?: string }) => e.msg).join("; ");
       }
-    } catch {
-      /* keep the status-code fallback */
-    }
+    } catch {}
     throw new ApiError(response.status, detail);
   }
 

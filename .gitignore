@@ -1,9 +1,7 @@
-# --- Data (MovieLens licence forbids redistribution) ---
 data/raw/
 data/interim/
 *.zip
 
-# --- Python ---
 .venv/
 venv/
 __pycache__/
@@ -13,22 +11,16 @@ __pycache__/
 .ruff_cache/
 .ipynb_checkpoints/
 
-# --- Node / frontend ---
 node_modules/
 frontend/dist/
 frontend/.vite/
 .env
 .env.local
 
-# --- OS / editor ---
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-# --- Assignment source (not part of the deliverable) ---
 *.docx
 
-# NOTE: artifacts/ is intentionally NOT ignored. Artifacts are model outputs
-# derived from MovieLens, not the raw dataset, and the deployed service loads
-# them at boot rather than training on the host. See README §6.

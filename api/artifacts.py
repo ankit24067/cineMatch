@@ -33,8 +33,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ARTIFACT_DIR = REPO_ROOT / "artifacts"
 RAW_DIR = REPO_ROOT / "data" / "raw"
 
-# A film that appears in no user's history has no collaborative signal; the
-# recommender falls back to content for these (see Recommender.similar).
 COLD_ITEM_NEIGHBOURS = 0
 
 
@@ -47,9 +45,9 @@ class Catalogue:
     two are allowed to meet.
     """
 
-    frame: pd.DataFrame  # indexed by item index, ordered 0..n_items-1
-    item_ids: np.ndarray  # index -> movie_id
-    user_ids: np.ndarray  # index -> user_id
+    frame: pd.DataFrame
+    item_ids: np.ndarray
+    user_ids: np.ndarray
     _item_index: dict[int, int]
     _user_index: dict[int, int]
 
@@ -112,7 +110,6 @@ class Service:
         if indices.size == 0:
             return []
         popularity = self.recommender.c.popularity[indices]
-        # Exact prefix matches outrank mere substring hits at equal popularity.
         titles = frame["title"].str.lower().to_numpy()[indices]
         prefix = np.array([t.startswith(needle) for t in titles], dtype=np.float32)
         order = np.argsort(-(prefix + popularity))
@@ -130,7 +127,6 @@ def _load_interactions(n_users: int, n_items: int) -> tuple[sparse.csr_matrix, b
     if not (RAW_DIR / "ratings.csv").exists():
         return sparse.csr_matrix((n_users, n_items), dtype=np.float32), False
 
-    # Imported lazily: scripts/ is not installed in the serving image.
     from scripts.matrix import build_id_maps, build_rating_matrix, load_frames
 
     frames = load_frames()
@@ -140,8 +136,6 @@ def _load_interactions(n_users: int, n_items: int) -> tuple[sparse.csr_matrix, b
 
 def _load_catalogue(artifact_dir: Path) -> Catalogue:
     frame = pd.read_parquet(artifact_dir / "catalogue.parquet")
-    # The recommender addresses items positionally, so the frame must be in
-    # index order with no gaps before we ever use .iloc on it.
     frame = frame.sort_values("index").reset_index(drop=True)
     expected = np.arange(len(frame), dtype=np.int64)
     if not np.array_equal(frame["index"].to_numpy(dtype=np.int64), expected):

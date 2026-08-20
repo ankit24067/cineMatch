@@ -1,13 +1,3 @@
-/**
- * The "Why this?" panel.
- *
- * These numbers are the actual per-component contributions captured during
- * scoring — not a plausible story reconstructed afterwards — so the panel
- * cannot disagree with the ranking it sits next to. On the cold-start path
- * `als` is exactly 0.0, which is worth showing rather than hiding: it is the
- * visible consequence of having no interaction history.
- */
-
 import type { Explanation } from "../types";
 
 const LABELS: Record<string, string> = {

@@ -31,8 +31,6 @@ MD5_URL = f"{BASE_URL}.zip.md5"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = REPO_ROOT / "data" / "raw"
 
-# Files we actually consume downstream. Anything else in the archive is dropped
-# so data/raw/ stays an explicit contract rather than "whatever upstream ships".
 REQUIRED_FILES = ("ratings.csv", "movies.csv", "tags.csv", "links.csv")
 
 CHUNK = 1 << 16
@@ -70,7 +68,6 @@ def _expected_md5() -> str | None:
     except requests.RequestException as exc:
         print(f"  ! could not fetch published MD5 ({exc}); skipping verification")
         return None
-    # Format: "MD5 (ml-latest-small.zip) = <hex>"
     text = response.text.strip()
     return text.rsplit("=", 1)[-1].strip() if "=" in text else text.split()[0]
 

@@ -24,8 +24,6 @@ EMBED_DIM = 384
 
 _YEAR = re.compile(r"\((\d{4})\)\s*$")
 
-# Tags are free text and extremely long-tailed. Keeping the most-used tags per
-# film avoids one user's idiosyncratic label dominating the document.
 MAX_TAGS_PER_FILM = 12
 
 
@@ -53,7 +51,6 @@ def build_documents(
     """
     indexed = movies.set_index("movieId")
 
-    # Most-frequent tags per film, lowercased so "Sci-Fi"/"sci-fi" collapse.
     tag_counts = (
         tags.assign(tag=tags["tag"].astype(str).str.strip().str.lower())
         .groupby(["movieId", "tag"])
@@ -86,9 +83,6 @@ def build_documents(
         if film_tags:
             n_tagged += 1
 
-        # Natural-language-ish phrasing rather than a bag of tokens: MiniLM was
-        # trained on sentences, and reads "A crime drama film." better than
-        # "crime|drama".
         parts = [title]
         if year:
             parts.append(f"released {year}")
@@ -101,9 +95,6 @@ def build_documents(
         if tagline:
             parts.append(tagline.rstrip("."))
         if overview:
-            # The overview is the densest semantic signal available; truncate
-            # generously rather than tightly, since MiniLM's window is 256
-            # word-pieces and anything past that is silently dropped anyway.
             parts.append(overview[:600])
             n_overview += 1
 
@@ -135,7 +126,7 @@ def encode(documents: list[str], batch_size: int = 64, verbose: bool = True) -> 
         documents,
         batch_size=batch_size,
         convert_to_numpy=True,
-        normalize_embeddings=True,  # cosine becomes a dot product downstream
+        normalize_embeddings=True,
         show_progress_bar=verbose,
     )
     return vectors.astype(np.float32)
@@ -158,7 +149,7 @@ def popularity_table(ratings: pd.DataFrame, item_ids: np.ndarray) -> pd.DataFram
 
     total = len(ratings)
     global_mean = float(ratings["rating"].mean())
-    prior = float(counts.median())  # evidence needed before a film's mean is trusted
+    prior = float(counts.median())
 
     table = pd.DataFrame(index=pd.Index(item_ids, name="movieId"))
     table["n_ratings"] = counts.reindex(item_ids).fillna(0).astype(int)
@@ -169,12 +160,9 @@ def popularity_table(ratings: pd.DataFrame, item_ids: np.ndarray) -> pd.DataFram
     table["damped_rating"] = (n * m + prior * global_mean) / (n + prior)
 
     share = np.divide(n, total, out=np.zeros_like(n), where=total > 0)
-    # Unseen films get the novelty of a hypothetical single rating rather than
-    # infinity, which would otherwise dominate any novelty-aware ranking.
     floor = 1.0 / total
     table["novelty"] = -np.log2(np.maximum(share, floor))
 
-    # The popularity term in the hybrid score: log-damped count, scaled to [0,1].
     log_count = np.log1p(n)
     table["popularity"] = log_count / log_count.max() if log_count.max() > 0 else log_count
 

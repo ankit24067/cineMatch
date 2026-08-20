@@ -1,9 +1,3 @@
-/**
- * 254 of 9,742 films have no TMDB poster, so the fallback is a real state the
- * UI hits, not a defensive nicety. It renders the title rather than a generic
- * placeholder so the card stays identifiable.
- */
-
 interface Props {
   title: string;
   poster: string | null;

@@ -1,9 +1,3 @@
-/**
- * Mirrors `api/schemas.py`. Kept hand-written rather than generated so the
- * drift is visible in review: if a field here has no counterpart there, one
- * of the two is wrong.
- */
-
 export interface Movie {
   movie_id: number;
   title: string;
@@ -13,7 +7,6 @@ export interface Movie {
   overview: string | null;
 }
 
-/** Component contributions are fractions of the final score and sum to 1.0. */
 export interface Explanation {
   contributions: Record<string, number>;
   because_of: Movie | null;

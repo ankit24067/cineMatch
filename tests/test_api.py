@@ -32,7 +32,6 @@ def test_movie_detail_carries_tmdb_metadata(client, seed_ids):
     body = client.get(f"/movies/{seed_ids[0]}").json()
     assert body["movie_id"] == seed_ids[0]
     assert body["genres"], "expected genres"
-    # The rebuilt catalogue has 97.4% overview coverage; these films are covered.
     assert body["overview"], "expected a TMDB overview on a well-known film"
     assert body["poster"], "expected a TMDB poster on a well-known film"
 

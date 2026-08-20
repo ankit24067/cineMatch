@@ -7,7 +7,6 @@ import { SeedPicker } from "./components/SeedPicker";
 import { SimilarDrawer } from "./components/SimilarDrawer";
 import type { Health, Movie, RecommendResponse } from "./types";
 
-/** Matches the tuned default the backend reports on /health. */
 const DEFAULT_LAMBDA = 0.6;
 
 export default function App() {
@@ -20,8 +19,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [lambda, setLambda] = useState(DEFAULT_LAMBDA);
-  // Lets the lambda effect re-rank the current picks without taking `seeds` as
-  // a dependency, which would re-fire the moment a pick changed.
+
   const seedsRef = useRef(seeds);
   seedsRef.current = seeds;
 
@@ -65,14 +63,6 @@ export default function App() {
     [],
   );
 
-  // Re-rank in place when the diversity slider settles, so the effect of MMR
-  // is something the user can watch happen rather than read about.
-  //
-  // Deliberately keyed on `lambda` alone. `result` and `seeds` are read inside
-  // but must not be dependencies: `result` is what the effect writes, so
-  // including it would re-fire on its own update and loop, and `seeds` changing
-  // should not silently re-rank behind the user's back — that is what the
-  // explicit "Get recommendations" button is for.
   const hasResult = result !== null;
   useEffect(() => {
     if (!hasResult) return;
@@ -86,9 +76,7 @@ export default function App() {
       const movie = await api.movie(movieId);
       setSeeds((prev) => [...prev, movie]);
       setExploring(null);
-    } catch {
-      /* the drawer already showed the film; a failed add is not worth a toast */
-    }
+    } catch {}
   }
 
   return (

@@ -1,11 +1,3 @@
-/**
- * Seed picker for the cold-start path.
- *
- * The backend treats fewer than 3 seeds as too little signal to call the
- * result personalised, so the UI enforces the same threshold up front rather
- * than letting the user submit and then explaining the disclaimer.
- */
-
 import { useEffect, useRef, useState } from "react";
 
 import { api, ApiError } from "../api";
@@ -42,7 +34,7 @@ export function SeedPicker({ seeds, onChange, onSubmit, busy }: Props) {
     const timer = setTimeout(async () => {
       try {
         const hits = await api.search(trimmed, 12);
-        // Drop responses that arrived after a newer keystroke.
+
         if (ticket !== latest.current) return;
         setResults(hits);
         setError(null);

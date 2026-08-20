@@ -1,11 +1,3 @@
-/**
- * "More like this" — item-to-item neighbours for one film.
- *
- * Deliberately shows the raw cosine similarity next to each title. It is the
- * one place the UI exposes an unblended signal, which makes the franchise
- * clustering in the neighbour lists visible rather than quietly smoothed over.
- */
-
 import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../api";

@@ -24,7 +24,6 @@ class Split:
     """Training interactions plus per-user held-out relevant items."""
 
     train: sparse.csr_matrix
-    # user index -> item indices the user rated >= threshold in the held-out period
     truth: dict[int, np.ndarray]
     name: str
 
@@ -65,8 +64,6 @@ def temporal_split(
     frame["u"] = frame["u"].astype(np.int64)
     frame["i"] = frame["i"].astype(np.int64)
 
-    # Stable ordering: timestamp ties are common (bulk-imported sessions), so
-    # break them by movieId to keep the split deterministic across runs.
     frame = frame.sort_values(["u", "timestamp", "movieId"], kind="mergesort")
 
     train_rows: list[np.ndarray] = []
@@ -77,7 +74,6 @@ def temporal_split(
     for user, group in frame.groupby("u", sort=False):
         n = len(group)
         if n < min_interactions:
-            # Too short to hold out from: keep entirely in training.
             train_rows.append(group.to_numpy())
             continue
 

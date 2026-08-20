@@ -1,11 +1,7 @@
-# Keep the serving image to what the API actually reads.
 
-# Build-time only. tmdb.json is the raw TMDB response cache (4.1 MB) consumed
-# by build_artifacts.py; the catalogue already carries posters and overviews.
 artifacts/tmdb.json
 artifacts/documents_sample.json
 
-# MovieLens raw data is gitignored anyway, but never let it into an image.
 data/
 
 frontend/

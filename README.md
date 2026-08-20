@@ -229,8 +229,9 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 # Serving only (what the deployed container installs):
 pip install -r requirements.txt
 
-# Rebuilding artifacts additionally needs the offline pipeline:
-pip install torch --index-url https://download.pytorch.org/whl/cpu
+# Rebuilding artifacts additionally needs the offline pipeline.
+# The CPU-only torch build is not on PyPI, so requirements-dev.txt carries an
+# --extra-index-url line pointing at PyTorch's index. One command, no prelude:
 pip install -r requirements-dev.txt
 
 python scripts/download_data.py     # fetches MovieLens into data/raw/
@@ -363,11 +364,21 @@ This is why the demo asks you to pick five films rather than logging you in.
 `GET /search` for natural-language semantic query ("space movies that are
 actually about grief") is **not implemented**. The embeddings support it — that
 is what `Recommender.search` is for — but answering a free-text query requires
-encoding it at request time. Two things are missing: the MiniLM ONNX export, and
-the runtime to execute it — `onnxruntime` is pinned but commented out of
-`requirements.txt`, because shipping a 124 MB dependency chain that nothing
-imports is worse than shipping neither (§14). Title search covers the seed
-picker, which is what the UI needs today.
+encoding it at request time. Three things are missing: the MiniLM ONNX export,
+the runtime to execute it (`onnxruntime`, excluded from `requirements.txt`
+because shipping a 124 MB dependency chain that nothing imports is worse than
+shipping neither — §14), and the exporter itself.
+
+`optimum[onnxruntime]` was previously pinned in `requirements-dev.txt` for that
+export. It has been removed, because the pin was never satisfiable:
+`sentence-transformers 6.0.0` requires `transformers >= 5.0`, while
+`optimum[onnxruntime] 1.23.3` requires `transformers < 4.47`. There is no
+overlap, so `pip install -r requirements-dev.txt` failed outright and `optimum`
+was in fact never installed. Adding semantic search means re-introducing an
+exporter with a pin compatible with the sentence-transformers version that
+built the committed embeddings.
+
+Title search covers the seed picker, which is what the UI needs today.
 
 ---
 

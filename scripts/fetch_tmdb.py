@@ -37,8 +37,6 @@ CACHE_PATH = ARTIFACT_DIR / "tmdb.json"
 API_ROOT = "https://api.themoviedb.org/3/movie"
 IMAGE_BASE = "https://image.tmdb.org/t/p/w342"
 
-# TMDB's documented ceiling is ~50 req/s. We stay well under it: this is
-# someone else's free service and the run is a one-off.
 REQUESTS_PER_SECOND = 20
 FLUSH_EVERY = 200
 
@@ -95,7 +93,6 @@ def fetch_one(session: requests.Session, tmdb_id: int, api_key: str) -> dict | N
     if response.status_code == 404:
         return {"missing": True}
     if response.status_code == 429:
-        # Rate limited: back off and let the caller retry on the next run.
         time.sleep(float(response.headers.get("Retry-After", 2)))
         return None
     if response.status_code == 401:

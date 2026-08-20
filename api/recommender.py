@@ -29,7 +29,6 @@ DEFAULT_WEIGHTS = {"als": 0.40, "item_cf": 0.30, "content": 0.20, "popularity": 
 DEFAULT_LAMBDA = 0.75
 DEFAULT_CANDIDATES = 300
 
-# Below this many rated items we stop claiming the result is personalised.
 COLD_START_MINIMUM = 3
 
 
@@ -37,14 +36,14 @@ COLD_START_MINIMUM = 3
 class Components:
     """Everything the scorer needs, all index-aligned on item index."""
 
-    user_factors: np.ndarray  # (n_users, f)
-    item_factors: np.ndarray  # (n_items, f)
-    knn_indices: np.ndarray  # (n_items, k) int32, -1 padded
-    knn_similarities: np.ndarray  # (n_items, k) float32
-    embeddings: np.ndarray  # (n_items, d) L2-normalised
-    popularity: np.ndarray  # (n_items,) in [0, 1]
-    novelty: np.ndarray  # (n_items,) self-information
-    interactions: sparse.csr_matrix  # (n_users, n_items) observed ratings
+    user_factors: np.ndarray
+    item_factors: np.ndarray
+    knn_indices: np.ndarray
+    knn_similarities: np.ndarray
+    embeddings: np.ndarray
+    popularity: np.ndarray
+    novelty: np.ndarray
+    interactions: sparse.csr_matrix
     catalogue: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @property
@@ -111,7 +110,6 @@ class Recommender:
         self.mmr_lambda = mmr_lambda
         self.n_candidates = n_candidates
 
-    # ---------------------------------------------------------------- history
 
     def history(self, user: int) -> tuple[np.ndarray, np.ndarray]:
         """(item indices, ratings) this user has rated."""
@@ -122,30 +120,25 @@ class Recommender:
         items, ratings = self.history(user)
         return items[ratings >= threshold]
 
-    # ------------------------------------------------------ candidate stage
 
     def _candidates(self, user: int, seeds: np.ndarray, exclude: set[int]) -> np.ndarray:
         """Recall-oriented retrieval. Scoring all 9,742 items per request is
         wasteful; this narrows to a few hundred plausible ones."""
         pool: set[int] = set()
 
-        # 1. Collaborative neighbours of everything the user liked.
         if seeds.size:
             neighbours = self.c.knn_indices[seeds].ravel()
             pool.update(int(i) for i in neighbours if i >= 0)
 
-        # 2. Top ALS items, if this user has latent factors.
         if user >= 0 and user < self.c.user_factors.shape[0]:
             als_scores = self.c.item_factors @ self.c.user_factors[user]
             pool.update(int(i) for i in np.argpartition(-als_scores, 200)[:200])
 
-        # 3. Content neighbours of the user's profile.
         profile = self._content_profile(seeds)
         if profile is not None:
             content_scores = self.c.embeddings @ profile
             pool.update(int(i) for i in np.argpartition(-content_scores, 200)[:200])
 
-        # 4. Popularity backfill guarantees a full slate for sparse users.
         if len(pool) < self.n_candidates:
             top_popular = np.argsort(-self.c.popularity)[: self.n_candidates * 2]
             pool.update(int(i) for i in top_popular)
@@ -161,7 +154,6 @@ class Recommender:
         norm = float(np.linalg.norm(profile))
         return profile / norm if norm > 0 else None
 
-    # --------------------------------------------------------- scoring stage
 
     def _raw_signals(
         self, user: int, seeds: np.ndarray, candidates: np.ndarray
@@ -179,8 +171,6 @@ class Recommender:
         else:
             als = np.zeros(n, dtype=np.float32)
 
-        # Item-CF: sum of similarities from the user's liked items, accumulated
-        # over the truncated neighbour lists. Tracks which seed contributed most.
         item_cf = np.zeros(n, dtype=np.float32)
         best_seed = np.full(n, -1, dtype=np.int64)
         best_seed_similarity = np.zeros(n, dtype=np.float32)
@@ -216,7 +206,6 @@ class Recommender:
         }
         return signals, best_seed, best_seed_similarity
 
-    # ---------------------------------------------------------- rerank stage
 
     def _mmr(
         self, candidates: np.ndarray, scores: np.ndarray, k: int, lambda_: float
@@ -237,7 +226,6 @@ class Recommender:
         vectors = self.c.embeddings[candidates]
         selected: list[int] = []
         remaining = set(range(len(candidates)))
-        # Similarity to the selected set, maintained incrementally.
         max_similarity = np.zeros(len(candidates), dtype=np.float32)
 
         for _ in range(min(k, len(candidates))):
@@ -256,7 +244,6 @@ class Recommender:
 
         return selected
 
-    # ------------------------------------------------------------- public API
 
     def recommend(
         self,
@@ -290,8 +277,6 @@ class Recommender:
 
         signals, best_seed, best_seed_similarity = self._raw_signals(user, seeds, candidates)
 
-        # Normalise within the candidate set, then blend. Keeping the weighted
-        # parts is what makes the explanation exact rather than reconstructed.
         parts = {name: weights.get(name, 0.0) * _minmax(values) for name, values in signals.items()}
         total = np.sum(list(parts.values()), axis=0)
 
@@ -325,7 +310,6 @@ class Recommender:
         if len(pairs) >= k:
             return pairs[:k]
 
-        # Cold item: no collaborative signal at all (20 such films exist).
         scores = self.c.embeddings @ self.c.embeddings[item]
         scores[item] = -np.inf
         seen = {i for i, _ in pairs}

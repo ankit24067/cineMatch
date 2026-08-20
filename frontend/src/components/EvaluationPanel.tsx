@@ -1,10 +1,3 @@
-/**
- * The measured offline results, served straight from artifacts/evaluation.json.
- *
- * Shown in the UI on purpose: a recommender demo that will not state its own
- * NDCG is asking to be taken on faith. The weak rows stay in the table.
- */
-
 import { useEffect, useState } from "react";
 
 import { api } from "../api";

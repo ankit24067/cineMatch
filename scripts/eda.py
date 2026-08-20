@@ -38,16 +38,12 @@ def summarise(data: dict[str, pd.DataFrame]) -> dict[str, object]:
     n_catalogue = len(movies)
     n_ratings = len(ratings)
 
-    # Density is quoted against the full catalogue, not just rated films: the
-    # honest denominator is every item the recommender could surface.
     density = n_ratings / (n_users * n_catalogue) * 100
 
     timestamps = pd.to_datetime(ratings["timestamp"], unit="s")
     per_user = ratings.groupby("userId").size()
     per_item = ratings.groupby("movieId").size()
 
-    # Long tail: how concentrated is the interaction mass? This is the evidence
-    # behind the popularity-bias discussion (README F3).
     ordered = per_item.sort_values(ascending=False).to_numpy()
     cumulative = np.cumsum(ordered) / ordered.sum()
     top_1pct = ordered[: max(1, len(ordered) // 100)].sum() / ordered.sum() * 100

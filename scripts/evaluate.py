@@ -99,8 +99,6 @@ def fit_components(
         verbose=verbose,
     )
 
-    # Popularity must also come from training rows only, or the popularity
-    # baseline gets a preview of which films become popular in the test period.
     train_coo = train.tocoo()
     train_ratings = pd.DataFrame(
         {
@@ -123,7 +121,6 @@ def fit_components(
     )
 
 
-# ------------------------------------------------------------------ rankers
 
 
 def rank_random(rng: np.random.Generator, n_items: int, seen: set[int], k: int) -> np.ndarray:
@@ -271,8 +268,6 @@ def tune(
         lambda_rows.append(row)
         print(f"  lambda={lambda_:.1f}  NDCG {row['ndcg']:.4f}  ILD {row['diversity']:.3f}")
 
-    # Pick the smallest lambda whose NDCG stays within 5% of the best: buy the
-    # most diversity available for a cost we are willing to state out loud.
     ceiling = max(r["ndcg"] for r in lambda_rows)
     affordable = [r for r in lambda_rows if r["ndcg"] >= 0.95 * ceiling]
     best_lambda = min(r["lambda"] for r in affordable)
