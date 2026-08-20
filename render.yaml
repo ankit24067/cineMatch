@@ -1,0 +1,46 @@
+# Render blueprint — both services in one file.
+#
+# Deploy with: Render dashboard -> New -> Blueprint -> point at this repo.
+# Everything here works on the free tier.
+#
+# The two services are deployed separately and are therefore always
+# cross-origin. The API sets permissive CORS (allow_origins=["*"],
+# allow_credentials=False) because there are no accounts and no cookies —
+# nothing to protect with an origin allowlist. Tighten it in api/main.py if
+# that ever changes.
+
+services:
+  - type: web
+    name: cinematch-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      # Render injects PORT; the Dockerfile CMD already honours it.
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  - type: web
+    name: cinematch-web
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      # Vite inlines this at BUILD time, not runtime — changing it requires a
+      # redeploy of the static site, not just a restart.
+      - key: VITE_API_URL
+        value: https://cinematch-api.onrender.com
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        # Vite fingerprints asset filenames, so they are safe to cache forever.
+        value: public, max-age=31536000, immutable
+    routes:
+      # Single-page app: unknown paths fall back to index.html.
+      - type: rewrite
+        source: /*
+        destination: /index.html

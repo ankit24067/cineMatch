@@ -73,6 +73,28 @@ def _resolve_seeds(service: Service, movie_ids: list[int]) -> tuple[np.ndarray, 
     return np.asarray(indices, dtype=np.int64), unknown
 
 
+@app.get("/", include_in_schema=False)
+def index() -> dict:
+    """Service index.
+
+    Without this, opening the deployed backend URL returns a bare 404, which
+    reads as a broken deployment rather than an API with no page at its root.
+    """
+    return {
+        "service": "CineMatch API",
+        "version": app.version,
+        "docs": "/docs",
+        "endpoints": [
+            "GET /health",
+            "GET /movies?q=&limit=",
+            "GET /movies/{movie_id}",
+            "GET /movies/{movie_id}/similar?k=",
+            "POST /recommend",
+            "GET /evaluation",
+        ],
+    }
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     service = get_service()

@@ -2,7 +2,7 @@
 
 > **Live demo:** ⟨TODO: deployment URL⟩
 > **API docs:** ⟨TODO: backend URL⟩/docs
-> **Repository:** ⟨TODO: GitHub URL⟩
+> **Repository:** https://github.com/ankit24067/cineMatch
 
 **New here? Start at the demo link, pick 5 films you like on the landing screen, and hit *Get Recommendations*.** Every recommendation card has a **"Why this?"** button that opens the actual scoring breakdown behind it.
 
@@ -86,7 +86,7 @@ All heavy computation is **precomputed offline** into artifacts. The serving lay
                               │  artifacts/
                               ▼
 ┌──────────────────────────────────────────────────────────┐
-│  SERVING  —  FastAPI on ⟨TODO: host⟩                     │
+│  SERVING  —  FastAPI in Docker (Render, free tier)       │
 │                                                          │
 │   POST /recommend         (seeds and/or user_id)         │
 │   GET  /movies?q=         (title search)                 │
@@ -99,7 +99,7 @@ All heavy computation is **precomputed offline** into artifacts. The serving lay
                               │  JSON
                               ▼
 ┌──────────────────────────────────────────────────────────┐
-│  FRONTEND  —  React + Vite on ⟨TODO: host⟩               │
+│  FRONTEND  —  React + Vite, static build                 │
 │   Hero banner · "Because you watched X" rails            │
 │   · "Why this?" explanation panel · cold-start picker    │
 └──────────────────────────────────────────────────────────┘
@@ -204,10 +204,10 @@ For each recommendation we return the normalised contribution of each scoring co
 | Language | Python 3.11, TypeScript |
 | Data | pandas, NumPy, SciPy (sparse) |
 | Models | `implicit` (ALS), scikit-learn, sentence-transformers |
-| Runtime inference | ONNX Runtime (quantised MiniLM) |
+| Runtime inference | None — the serving path is matrix slices and lookups only. ONNX Runtime is the planned encoder for semantic search, currently commented out of `requirements.txt` |
 | API | FastAPI, Uvicorn, Pydantic v2 |
 | Frontend | React 18, Vite, TypeScript, Tailwind CSS |
-| Deployment | ⟨TODO: backend host⟩ (Docker), ⟨TODO: frontend host⟩ — not yet deployed |
+| Deployment | Render (Docker) + Render static site or Vercel. Blueprint in [`render.yaml`](render.yaml); guide in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). **Config committed and verified, not yet deployed** |
 | Testing | pytest, ruff |
 
 ---
@@ -220,7 +220,7 @@ Python 3.11+, Node 18+, ~2 GB free disk.
 ### Backend
 
 ```bash
-git clone ⟨TODO: repo URL⟩
+git clone https://github.com/ankit24067/cineMatch.git
 cd cineMatch
 
 python -m venv .venv
@@ -265,6 +265,23 @@ Without `--all` the script prints the resolved configuration and exits.
 ```bash
 pytest                              # exercises the API against the real artifacts
 ```
+
+### Deploying
+
+```bash
+docker build -t cinematch .
+docker run -p 8000:8000 cinematch   # http://localhost:8000/health
+```
+
+Both services are configured for Render's free tier via the blueprint in
+[`render.yaml`](render.yaml). Full walkthrough, including the free-tier cold
+start and why `VITE_API_URL` needs a *rebuild* rather than a restart, in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+Note that a deployed instance has **no interaction data** — the MovieLens
+licence forbids redistributing the ratings — so it serves the cold-start path
+only and `/recommend` with a `user_id` returns 409. The frontend never uses
+that path, so nothing in the UI is degraded.
 
 ---
 
@@ -346,9 +363,11 @@ This is why the demo asks you to pick five films rather than logging you in.
 `GET /search` for natural-language semantic query ("space movies that are
 actually about grief") is **not implemented**. The embeddings support it — that
 is what `Recommender.search` is for — but answering a free-text query requires
-encoding it at request time, and the serving image deliberately carries ONNX
-Runtime rather than PyTorch (§14). The MiniLM ONNX export is not built yet.
-Title search covers the seed picker, which is what the UI needs today.
+encoding it at request time. Two things are missing: the MiniLM ONNX export, and
+the runtime to execute it — `onnxruntime` is pinned but commented out of
+`requirements.txt`, because shipping a 124 MB dependency chain that nothing
+imports is worse than shipping neither (§14). Title search covers the seed
+picker, which is what the UI needs today.
 
 ---
 
@@ -428,7 +447,7 @@ Detailed walkthroughs with screenshots in [`docs/TEST_CASES.md`](docs/TEST_CASES
 
 | # | Scenario | What happens | Why | Mitigation status |
 |---|---|---|---|---|
-| F1 | **Extreme cold start** (1 seed) | Output collapses toward popularity | One embedding is not a taste profile | Partially mitigated — UI labels it non-personalised |
+| F1 | **Extreme cold start** (1 seed) | Slate covers only one facet of taste. It does *not* collapse toward popularity — measured, popularity's share is **lower** at 1 seed (0.183) than at 5 (0.204) | One embedding is not a taste profile | Partially mitigated — UI labels it non-personalised |
 | F2 | **Franchise degeneracy** | *The Godfather* → *The Godfather Part II* | Technically correct, practically useless: co-occurrence is near-perfect for sequels | Open |
 | F3 | **Popularity bias** | Long-tail films rarely surface | ALS is trained on skewed interaction counts | Partially mitigated by MMR + novelty term |
 | F4 | **Compositional queries** | *"like Inception but funny"* | Embedding anchors on *Inception*, ignores the negation/modifier | Open — needs query decomposition |
@@ -436,6 +455,15 @@ Detailed walkthroughs with screenshots in [`docs/TEST_CASES.md`](docs/TEST_CASES
 | F6 | **Grey-sheep users** | Users with idiosyncratic taste get poor recs | Too few similar users for CF to work | Open — content weight helps marginally |
 
 We consider F2 and F4 the most interesting: both are cases where the *metrics look fine* and the user experience is bad, which is exactly why offline evaluation alone is insufficient.
+
+F1 is a case of the reverse — a failure mode we asserted from intuition and that
+measurement contradicted. The original claim here was that a single seed
+collapses the output toward popularity; running it showed the opposite, and the
+row above now states what the numbers actually say. F4 remains unverified
+because it depends on the unshipped semantic search, and F6 is not isolated by
+the current cohorts at all: history *length* is not taste *idiosyncrasy*. Both
+are marked as such in [`docs/TEST_CASES.md`](docs/TEST_CASES.md) rather than
+being presented as measured.
 
 ---
 
@@ -456,7 +484,7 @@ We consider F2 and F4 the most interesting: both are cases where the *metrics lo
 |---|---|---|
 | **Hybrid over single model** | Pure ALS; pure content | Neither covers both cold and warm users. Hybrid degrades gracefully as history shrinks |
 | **Precompute artifacts offline** | Train or compute on request | Keeps p95 latency in the tens of milliseconds and the container small enough for free-tier hosting |
-| **ONNX Runtime instead of PyTorch at serving time** | Ship `torch` + `sentence-transformers` | Keeps 519 MB of installed packages out of the image (measured: torch 514 MB, sentence-transformers 5 MB). Serving needs inference only, never gradients. Note that no request-time encoding ships yet — see the semantic-search gap in [§9](#9-api-reference) — so this currently saves image size without yet being exercised |
+| **No ML runtime in the serving image at all** | Ship `torch` + `sentence-transformers`; ship ONNX Runtime | Embeddings are precomputed, so serving needs no encoder. Excluding torch keeps 519 MB out of the image (measured: torch 514 MB, sentence-transformers 5 MB). ONNX Runtime was pinned as the lighter replacement, but nothing imports it while semantic search is unshipped, and it costs a further 124 MB (36 MB itself, plus sympy at 69 MB and the tokenizers/huggingface-hub chain), so it is commented out rather than shipped dead. Serving dependencies now total 372 MB installed, dominated by scipy, pandas and pyarrow |
 | **Top-50 neighbour truncation** | Full similarity matrix | 247× smaller artifact: 380 MB dense → 1.5 MB. The NDCG cost is unquantified — the full-matrix variant was never evaluated |
 | **MMR reranking, shipped despite an accuracy cost** | Ship raw relevance ranking | A slate of ten near-identical films is a worse product than a slightly less "accurate" varied one |
 | **Temporal split** | Random 80/20 | Random splits leak future interactions and inflate results. We preferred defensible numbers to flattering ones |
