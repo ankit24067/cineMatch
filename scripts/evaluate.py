@@ -30,7 +30,6 @@ from scipy import sparse
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import metrics as M  # noqa: E402
-from api.recommender import Components, Recommender  # noqa: E402
 from content import popularity_table  # noqa: E402
 from matrix import (  # noqa: E402
     ARTIFACT_DIR,
@@ -44,6 +43,8 @@ from matrix import (  # noqa: E402
 )
 from models import als, item_knn  # noqa: E402
 from split import Split, cohort_of, temporal_split  # noqa: E402
+
+from api.recommender import Components, Recommender  # noqa: E402
 
 K = 10
 SEED = 42

@@ -27,13 +27,10 @@ import argparse
 import json
 import time
 from datetime import UTC, datetime
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
-from scipy import sparse
 
 import content as content_mod
+import numpy as np
+import pandas as pd
 from matrix import (
     ARTIFACT_DIR,
     POSITIVE_THRESHOLD,

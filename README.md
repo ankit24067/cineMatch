@@ -212,16 +212,26 @@ Python 3.11+, Node 18+, ~2 GB free disk.
 
 ```bash
 git clone ⟨TODO: repo URL⟩
-cd recommendation_system
+cd cineMatch
 
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+# Serving only (what the deployed container installs):
 pip install -r requirements.txt
 
+# Rebuilding artifacts additionally needs the offline pipeline:
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements-dev.txt
+
 python scripts/download_data.py     # fetches MovieLens into data/raw/
-python scripts/build_artifacts.py   # ~⟨TODO⟩ min — trains and writes artifacts/
+python scripts/build_artifacts.py   # ~3.5 min — trains and writes artifacts/
 uvicorn api.main:app --reload       # http://localhost:8000/docs
 ```
+
+The artifacts are committed, so **you can skip straight to `uvicorn`** if you only
+want to run the API. `download_data.py` and `build_artifacts.py` are needed only
+to rebuild them or to enable warm-user requests (see [§9](#9-api-reference)).
 
 ### Frontend
 
@@ -236,6 +246,15 @@ npm run dev                         # http://localhost:5173
 
 ```bash
 python scripts/evaluate.py --all    # writes docs/EVALUATION.md results table
+python scripts/evaluate.py --tune   # grid-searches weights on the validation split
+```
+
+Without `--all` the script prints the resolved configuration and exits.
+
+### Running the tests
+
+```bash
+pytest                              # exercises the API against the real artifacts
 ```
 
 ---
@@ -246,35 +265,81 @@ Interactive docs at `/docs`. Summary:
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/recommend?user_id={id}&k=10` | Personalised recommendations with explanations |
-| `GET` | `/similar/{movie_id}?k=10` | Item-to-item "More like this" |
-| `POST` | `/cold_start` | Body: `{ "movie_ids": [...] }` → recommendations from seeds |
-| `GET` | `/search?q={query}` | Natural-language semantic search |
-| `GET` | `/explain/{user_id}/{movie_id}` | Full score decomposition for one pair |
-| `GET` | `/health` | Liveness + artifact load status |
+| `POST` | `/recommend` | Recommendations with explanations — cold start *and* warm users |
+| `GET` | `/movies?q={query}&limit=20` | Title search, backing the seed picker |
+| `GET` | `/movies/{movie_id}` | Catalogue detail (title, year, genres, poster, overview) |
+| `GET` | `/movies/{movie_id}/similar?k=10` | Item-to-item "More like this" |
+| `GET` | `/evaluation` | The measured offline results from `artifacts/evaluation.json` |
+| `GET` | `/health` | Liveness, artifact build time, and active weights |
+
+**One recommend endpoint, two paths.** Passing `seed_movie_ids` is the cold-start
+path: the recommender is called with `user = -1`, which zeroes the ALS term and
+lets item-CF, content, and popularity carry the slate. Passing `user_id` uses
+that user's stored history instead. Supplying both recommends *from the seeds*
+while still excluding what the user has already seen. Splitting these into
+separate endpoints would have duplicated the same pipeline behind two URLs.
+
+**Explanations are inline, not a separate call.** Every recommendation carries
+its own score decomposition, so the "Why this?" panel needs no second request
+and cannot drift from the ranking it describes.
 
 <details>
-<summary>Example response — <code>GET /recommend?user_id=42&k=2</code></summary>
+<summary>Example — <code>POST /recommend</code> with <code>{"seed_movie_ids": [1, 296, 2571, 318], "k": 2}</code></summary>
 
 ```json
 {
-  "user_id": 42,
-  "generated_in_ms": 31,
-  "strategy": "hybrid+mmr",
   "recommendations": [
     {
-      "movie_id": 1213,
-      "title": "Goodfellas (1990)",
-      "score": 0.891,
+      "movie": {
+        "movie_id": 2959,
+        "title": "Fight Club",
+        "year": 1999,
+        "genres": ["Action", "Crime", "Drama", "Thriller"],
+        "poster": "https://image.tmdb.org/t/p/w342/...",
+        "overview": "A ticking-time-bomb insomniac..."
+      },
+      "score": 0.554,
+      "rank": 1,
       "explanation": {
-        "primary_reason": "Because you watched Heat (1995)",
-        "components": { "als": 0.68, "item_cf": 0.24, "content": 0.06, "popularity": 0.02 }
+        "contributions": { "als": 0.0, "item_cf": 0.541981, "content": 0.290132, "popularity": 0.167887 },
+        "because_of": { "movie_id": 296, "title": "Pulp Fiction", "year": 1994, "genres": ["Comedy", "Crime", "Drama", "Thriller"] },
+        "seed_similarity": 0.412
       }
     }
-  ]
+  ],
+  "seeds": [ "…the four resolved seed films…" ],
+  "personalised": true,
+  "cold_start": true,
+  "took_ms": 6.03
 }
 ```
+
+`contributions` are fractions of the final score and sum to 1.0. `als` is exactly
+zero here because a cold-start caller has no latent factors — the explanation
+reports that honestly rather than hiding the missing signal.
 </details>
+
+### Deployment modes
+
+The MovieLens licence forbids redistributing the ratings, so `data/raw/` is
+gitignored and **is not present in the deployed container**. The API detects this
+at boot and reports it as `has_interactions` on `/health`:
+
+| `has_interactions` | When | Behaviour |
+|---|---|---|
+| `true` | Local, after `download_data.py` | Both paths; `user_id` works |
+| `false` | Deployed | Cold start only; `user_id` returns `409` |
+
+This is why the demo asks you to pick five films rather than logging you in.
+
+### Not yet shipped
+
+`GET /search` for natural-language semantic query ("space movies that are
+actually about grief") is **not implemented**. The embeddings support it — that
+is what `Recommender.search` is for — but answering a free-text query requires
+encoding it at request time, and the serving image deliberately carries ONNX
+Runtime rather than PyTorch (§14). The MiniLM ONNX export is not built yet.
+Title search covers the seed picker, which is what the UI needs today.
 
 ---
 
@@ -335,8 +400,8 @@ Detailed walkthroughs with screenshots in [`docs/TEST_CASES.md`](docs/TEST_CASES
 |---|---|---|---|---|
 | S1 | Warm user, coherent taste | User ⟨TODO⟩ (crime/thriller history) | Genre-consistent recs with 2–3 adjacent-genre surprises | ⟨TODO⟩ |
 | S2 | Cold start from 5 seeds | Seeds: ⟨TODO⟩ | Sensible recs without any interaction history | ⟨TODO⟩ |
-| S3 | Item-to-item similarity | `/similar/{id}` | Thematic neighbours, not just same-franchise | ⟨TODO⟩ |
-| S4 | Natural-language search | `"mind-bending sci-fi"` | Semantically relevant results | ⟨TODO⟩ |
+| S3 | Item-to-item similarity | `/movies/{id}/similar` | Thematic neighbours, not just same-franchise | ⟨TODO⟩ |
+| S4 | Natural-language search | `"mind-bending sci-fi"` | Semantically relevant results | Not shipped — see [§9](#9-api-reference) |
 | S5 | Explanation fidelity | Any rec | Named seed item is genuinely in user history; components sum to 1 | ⟨TODO⟩ |
 | S6 | Eclectic user | User with wide genre spread | MMR keeps the slate varied rather than collapsing to one genre | ⟨TODO⟩ |
 
