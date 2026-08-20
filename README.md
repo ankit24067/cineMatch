@@ -131,12 +131,12 @@ All heavy computation is **precomputed offline** into artifacts. The serving lay
 ## 5. Recommendation Methodology
 
 ### 5.1 Item–item collaborative filtering
-Cosine similarity over the L2-normalised, mean-centred user–item matrix. We keep the **top 50 neighbours per item** and discard the rest, which cuts the similarity matrix from ⟨TODO⟩ MB to ⟨TODO⟩ MB with negligible metric loss.
+Cosine similarity over the L2-normalised, mean-centred user–item matrix. We keep the **top 50 neighbours per item** and discard the rest, which cuts the similarity matrix from **380 MB** (9,742² dense float32) to **1.5 MB** on disk — a 247× reduction. The full-matrix variant was never evaluated end to end, so the accuracy cost of the truncation is asserted, not measured; 50 is a conventional cutoff, and 9,722 of 9,742 items have a full neighbour list at that depth.
 
 ### 5.2 Matrix factorisation (ALS)
 Alternating Least Squares on the implicit-feedback formulation, with ratings ≥ 4.0 treated as positive signal and confidence weighting `c = 1 + α·r`.
 
-- Factors: ⟨TODO⟩ · Regularisation: ⟨TODO⟩ · Iterations: ⟨TODO⟩ · α: ⟨TODO⟩
+- Factors: **64** · Regularisation: **0.05** · Iterations: **15** · α: **40.0**
 - Selected by grid search on the validation split (see `scripts/evaluate.py`).
 
 ### 5.3 Content embeddings
@@ -148,7 +148,7 @@ Each film is represented as a single text document — `title · genres · top u
 score(u, i) = w₁·ALS(u,i) + w₂·itemCF(u,i) + w₃·content(u,i) + w₄·popularity(i)
 ```
 
-Each component is min–max normalised within the candidate set before blending, so no single signal dominates by virtue of its scale. Weights: `w₁=⟨TODO⟩, w₂=⟨TODO⟩, w₃=⟨TODO⟩, w₄=⟨TODO⟩`, tuned on the validation split against NDCG@10.
+Each component is min–max normalised within the candidate set before blending, so no single signal dominates by virtue of its scale. Weights: `w₁=0.40, w₂=0.20, w₃=0.30, w₄=0.10`, selected by grid search over 22 combinations on the validation split against NDCG@10 (`python scripts/evaluate.py --all --tune`, best validation NDCG@10 = 0.1060, 560 users). The tuned weights land in `artifacts/tuned_weights.json`, which the serving layer prefers over the hand-set defaults when present.
 
 ### 5.5 Diversity reranking (MMR)
 
@@ -156,7 +156,14 @@ Each component is min–max normalised within the candidate set before blending,
 MMR(i) = λ · score(u,i) − (1−λ) · max_{j ∈ selected} cos(emb_i, emb_j)
 ```
 
-with **λ = ⟨TODO⟩**. This deliberately trades a small amount of ranking accuracy for a large gain in intra-list diversity and catalogue coverage — quantified in [Results](#11-results).
+with **λ = 0.6**, chosen by sweeping λ on the validation split and taking the most diverse setting that stayed within 5% of the best NDCG:
+
+| λ | 1.0 | 0.9 | 0.8 | 0.7 | **0.6** | 0.5 |
+|---|---|---|---|---|---|---|
+| NDCG@10 | 0.1060 | 0.1058 | 0.1064 | 0.1052 | **0.1037** | 0.0968 |
+| ILD | 0.713 | 0.720 | 0.727 | 0.737 | **0.750** | 0.769 |
+
+λ = 0.5 is where the tradeoff turns bad: diversity gains 0.019 while NDCG drops 6.7%. At 0.6 the accuracy cost is 2.2% off the best for a 0.037 ILD gain — quantified on the test split in [Results](#11-results).
 
 ### 5.6 Cold start
 A new user selects ≥ 3 films. We average their content embeddings into a pseudo-profile, retrieve content-nearest items, and fold the profile into ALS latent space to blend in collaborative signal. Below 3 selections the system falls back to a popularity ranking, and **the UI says so explicitly** rather than pretending the result is personalised.
@@ -198,7 +205,7 @@ For each recommendation we return the normalised contribution of each scoring co
 | Runtime inference | ONNX Runtime (quantised MiniLM) |
 | API | FastAPI, Uvicorn, Pydantic v2 |
 | Frontend | React 18, Vite, TypeScript, Tailwind CSS |
-| Deployment | ⟨TODO: backend host⟩ (Docker), ⟨TODO: frontend host⟩ |
+| Deployment | ⟨TODO: backend host⟩ (Docker), ⟨TODO: frontend host⟩ — not yet deployed |
 | Testing | pytest, ruff |
 
 ---
@@ -376,15 +383,25 @@ All figures on the held-out temporal test split, k = 10.
 
 | Model | P@10 | R@10 | NDCG@10 | MAP@10 | Coverage | Novelty | ILD | p95 (ms) |
 |---|---|---|---|---|---|---|---|---|
-| Random | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ |
-| Popularity | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ |
-| Item-kNN | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ |
-| ALS | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ |
-| Content-only | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ |
-| Hybrid | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ |
-| **Hybrid + MMR** (shipped) | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ | ⟨TODO⟩ |
+| Random | 0.0017 | 0.0010 | 0.0015 | 0.0004 | 46.0% | 14.77 | 0.786 | 4 |
+| Popularity | 0.0573 | 0.0498 | 0.0745 | 0.0356 | 1.0% | 8.57 | 0.718 | 3 |
+| Item-kNN | 0.0400 | 0.0421 | 0.0572 | 0.0266 | 12.5% | 12.08 | 0.743 | 27 |
+| ALS | 0.0730 | 0.0822 | 0.0993 | 0.0461 | 8.8% | 10.06 | 0.756 | 25 |
+| Content-only | 0.0044 | 0.0042 | 0.0049 | 0.0015 | 6.2% | 14.86 | 0.534 | 27 |
+| Hybrid | 0.0851 | 0.0837 | **0.1146** | **0.0565** | 7.3% | 9.83 | 0.711 | 26 |
+| **Hybrid + MMR** (shipped) | 0.0848 | 0.0846 | 0.1144 | 0.0559 | 8.1% | 9.87 | **0.747** | 62 |
 
-**Reading the table:** ⟨TODO — write 3–5 sentences of honest interpretation. Expected shape: the hybrid beats every single-model baseline on ranking metrics; adding MMR *costs* a little NDCG while substantially raising coverage and intra-list diversity. State that tradeoff explicitly and justify shipping it.⟩
+592 test users. Coverage is the share of the 9,742-item catalogue that appears in any user's top 10; novelty is mean negative log popularity; ILD is mean intra-list distance in content-embedding space.
+
+**Reading the table.** The hybrid beats every single-model baseline on ranking: NDCG@10 0.1146 against 0.0993 for ALS, its strongest component, and 0.0745 for the popularity baseline. That margin over popularity is the one that matters — on a 610-user dataset with a temporal split, "recommend what everyone else watched" is a genuinely hard baseline, and a hybrid that failed to clear it would not be worth serving.
+
+Two components look bad alone and still earn their place. Item-kNN (0.0572) underperforms popularity outright, and Content-only (0.0049) is barely above random. Content-only also has the *lowest* diversity in the table (ILD 0.534) — plot synopses cluster films by subject matter, so a content-ranked slate collapses into ten variations of one theme. But the content tower is what makes cold start possible at all: with no interaction history, ALS and item-CF have nothing to score against, and the 0.30 weight the grid search chose for it says the signal is real once it is blended rather than ranked on.
+
+MMR costs almost nothing here. NDCG falls 0.1146 → 0.1144 (0.2%) and MAP 0.0565 → 0.0559, while ILD rises 0.711 → 0.747 and coverage 7.3% → 8.1%. That is a better trade than the validation sweep predicted, and it is why λ = 0.6 ships: a slate of ten near-identical films is a worse product than a marginally less "accurate" varied one, and at this magnitude the accuracy difference is within noise on 592 users.
+
+The honest caveats: MMR more than doubles p95 latency (26 ms → 62 ms) because reranking is O(candidates × k) over 384-dimensional embeddings, and **coverage is poor across the board** — the shipped model surfaces 8.1% of the catalogue, so roughly nine films in ten are never recommended to anyone. Popularity's 1.0% shows where that pressure comes from. Fixing it needs an explicit long-tail term in the objective, not a λ adjustment.
+
+Per-cohort NDCG@10, bucketed by training-history length: light (< 25 ratings, n=104) 0.1014 · medium (25–99, n=283) 0.1023 · heavy (≥ 100, n=205) 0.1378. The system degrades gracefully rather than collapsing on thin histories — light users retain 74% of heavy-user quality. Note that MovieLens guarantees at least 20 ratings per user, so "light" means light *for this dataset*; **there are no genuinely cold users in this measurement**, and the cold-start path the UI actually exercises is therefore untested offline.
 
 Full breakdown, including per-cohort results (cold / warm / heavy users), in [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
@@ -398,12 +415,12 @@ Detailed walkthroughs with screenshots in [`docs/TEST_CASES.md`](docs/TEST_CASES
 
 | # | Scenario | Input | Expected behaviour | Result |
 |---|---|---|---|---|
-| S1 | Warm user, coherent taste | User ⟨TODO⟩ (crime/thriller history) | Genre-consistent recs with 2–3 adjacent-genre surprises | ⟨TODO⟩ |
-| S2 | Cold start from 5 seeds | Seeds: ⟨TODO⟩ | Sensible recs without any interaction history | ⟨TODO⟩ |
-| S3 | Item-to-item similarity | `/movies/{id}/similar` | Thematic neighbours, not just same-franchise | ⟨TODO⟩ |
+| S1 | Warm user, coherent taste | User 553 — 65 liked films, 43% Crime/Thriller | Genre-consistent recs with 2–3 adjacent-genre surprises | ✅ 8 of 10 are Crime/Drama/Thriller (American History X, Memento, Se7en, Boondock Saints, Shawshank); the surprises are Ferris Bueller's Day Off and Amélie at ranks 9–10. 27 ms |
+| S2 | Cold start from 5 seeds | Toy Story · Pulp Fiction · The Matrix · Shawshank · Aliens | Sensible recs without any interaction history | ✅ Fight Club, Raiders of the Lost Ark, The Usual Suspects, Reservoir Dogs, Empire Strikes Back. `cold_start: true`, `als` contribution exactly `0.0` on every row, 7 ms |
+| S3 | Item-to-item similarity | `/movies/2571/similar` (The Matrix) | Thematic neighbours, not just same-franchise | ⚠️ Passes but imperfectly. Top hits are thematic — Fight Club (0.391), Gattaca (0.340), Blade-Runner-adjacent sci-fi — yet 3 of 8 slots are Star Wars entries. That is genuine co-viewing signal, not a title-match artifact, but it reads as franchise clustering to a user |
 | S4 | Natural-language search | `"mind-bending sci-fi"` | Semantically relevant results | Not shipped — see [§9](#9-api-reference) |
-| S5 | Explanation fidelity | Any rec | Named seed item is genuinely in user history; components sum to 1 | ⟨TODO⟩ |
-| S6 | Eclectic user | User with wide genre spread | MMR keeps the slate varied rather than collapsing to one genre | ⟨TODO⟩ |
+| S5 | Explanation fidelity | User 553, all 10 recs | Named seed item is genuinely in user history; components sum to 1 | ✅ Both verified programmatically across the slate. Rank 1: American History X — `als 0.455, item_cf 0.225, content 0.227, popularity 0.093`, *because you watched Fight Club* (confirmed present in the user's liked set) |
+| S6 | Eclectic user | User 115 — 73 liked films spanning 14 genres | MMR keeps the slate varied rather than collapsing to one genre | ✅ 13 distinct genres at λ=0.6 vs 10 at λ=1.0. The slate runs Goodfellas → Return of the Jedi → Blade Runner → Shrek → Rocky without losing coherence |
 
 ### ❌ Failure scenarios
 
@@ -437,8 +454,8 @@ We consider F2 and F4 the most interesting: both are cases where the *metrics lo
 |---|---|---|
 | **Hybrid over single model** | Pure ALS; pure content | Neither covers both cold and warm users. Hybrid degrades gracefully as history shrinks |
 | **Precompute artifacts offline** | Train or compute on request | Keeps p95 latency in the tens of milliseconds and the container small enough for free-tier hosting |
-| **ONNX Runtime instead of PyTorch at serving time** | Ship `torch` + `sentence-transformers` | Reduces the image by ~⟨TODO⟩ MB. Serving needs inference only, never gradients |
-| **Top-50 neighbour truncation** | Full similarity matrix | ⟨TODO⟩× smaller artifact for ⟨TODO⟩ NDCG loss |
+| **ONNX Runtime instead of PyTorch at serving time** | Ship `torch` + `sentence-transformers` | Keeps 519 MB of installed packages out of the image (measured: torch 514 MB, sentence-transformers 5 MB). Serving needs inference only, never gradients. Note that no request-time encoding ships yet — see the semantic-search gap in [§9](#9-api-reference) — so this currently saves image size without yet being exercised |
+| **Top-50 neighbour truncation** | Full similarity matrix | 247× smaller artifact: 380 MB dense → 1.5 MB. The NDCG cost is unquantified — the full-matrix variant was never evaluated |
 | **MMR reranking, shipped despite an accuracy cost** | Ship raw relevance ranking | A slate of ten near-identical films is a worse product than a slightly less "accurate" varied one |
 | **Temporal split** | Random 80/20 | Random splits leak future interactions and inflate results. We preferred defensible numbers to flattering ones |
 | **Explanations as first-class API output** | Post-hoc explanation generation | Contributions are computed during scoring, so the explanation reflects the *actual* decision rather than a plausible story told afterward |
