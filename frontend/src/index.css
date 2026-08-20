@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #08090c;
+  --color-panel: #14161c;
+  --color-edge: #262a35;
+  --color-accent: #e5b567;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: #e8eaf0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Horizontal rails scroll without a visible scrollbar chrome. */
+.rail::-webkit-scrollbar {
+  height: 6px;
+}
+.rail::-webkit-scrollbar-thumb {
+  background: var(--color-edge);
+  border-radius: 999px;
+}
+.rail::-webkit-scrollbar-track {
+  background: transparent;
+}

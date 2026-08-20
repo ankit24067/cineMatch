@@ -88,11 +88,13 @@ All heavy computation is **precomputed offline** into artifacts. The serving lay
 ┌──────────────────────────────────────────────────────────┐
 │  SERVING  —  FastAPI on ⟨TODO: host⟩                     │
 │                                                          │
-│   GET /recommend?user_id=&k=                             │
-│   GET /similar/{movie_id}                                │
-│   POST /cold_start        (seed items → profile)         │
-│   GET /search?q=          (natural-language query)       │
-│   GET /explain/{user_id}/{movie_id}                      │
+│   POST /recommend         (seeds and/or user_id)         │
+│   GET  /movies?q=         (title search)                 │
+│   GET  /movies/{id}                                      │
+│   GET  /movies/{id}/similar                              │
+│   GET  /evaluation · GET /health                         │
+│                                                          │
+│   Explanations are inline on /recommend, not a call.     │
 └──────────────────────────────────────────────────────────┘
                               │  JSON
                               ▼
