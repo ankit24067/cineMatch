@@ -14,13 +14,13 @@ popularity 0.1`, λ = 0.6, k = 10, artifacts built 2026-08-19.
 | [S1](#s1--warm-user-coherent-taste) | Warm user, coherent taste | Pass |
 | [S2](#s2--cold-start-from-five-seeds) | Cold start from 5 seeds | Pass |
 | [S3](#s3--item-to-item-similarity) | Item-to-item similarity | Pass with a caveat |
-| [S4](#s4--natural-language-search) | Natural-language search | Not shipped |
+| [S4](#s4--natural-language-search) | Natural-language search | Pass with a caveat |
 | [S5](#s5--explanation-fidelity) | Explanation fidelity | Pass |
 | [S6](#s6--eclectic-user) | Eclectic user, MMR effect | Pass |
 | [F1](#f1--extreme-cold-start-one-seed) | Extreme cold start | **README claim was wrong — corrected** |
 | [F2](#f2--franchise-degeneracy) | Franchise degeneracy | Confirmed, open |
 | [F3](#f3--popularity-bias-and-coverage) | Popularity bias | Confirmed, partially mitigated |
-| [F4](#f4--compositional-queries) | Compositional queries | Untestable — depends on S4 |
+| [F4](#f4--compositional-queries) | Compositional queries | **Confirmed, but the stated cause was wrong** |
 | [F5](#f5--stale-catalogue) | Stale catalogue | Confirmed, not fixable |
 | [F6](#f6--grey-sheep-users) | Grey-sheep users | Not isolated by the current split |
 
@@ -132,11 +132,37 @@ against a 0.39 ceiling), but to a user it reads as franchise clustering. See
 
 ### S4 — Natural-language search
 
-**Not shipped.** `GET /search` does not exist. Answering a free-text query
-requires encoding it at request time, which needs a MiniLM ONNX export that
-has not been built, and a runtime to execute it that is deliberately not
-installed. See README §9 and §14. Title search covers the seed picker, which
-is what the UI needs.
+**Shipped and measured.** `GET /search?q=mind-bending sci-fi&k=8`:
+
+| # | Film | Cosine |
+|---|---|---|
+| 1 | Brainstorm (1983) | 0.495 |
+| 2 | Mind Game (2004) | 0.482 |
+| 3 | A Beautiful Mind (2001) | 0.456 |
+| 4 | Paradox (2010) | 0.453 |
+| 5 | Inception (2010) | 0.447 |
+
+**Pass, with a caveat.** *Inception* and *Paradox* are the right kind of hit.
+*A Beautiful Mind* and *Mind Game* are not — they ride the literal token
+"mind". Single-vector retrieval over short queries is partly lexical, because
+the words themselves carry most of a four-token query's signal.
+
+`"dystopian future ruled by machines"` is the cleaner demonstration: The
+Terminator (0.491), The Time Machine (0.490), Terminator Genisys (0.479),
+Runaway (0.468), Equilibrium (0.445), Automata (0.434), Idiocracy (0.424).
+Substring search returns **zero** results for that query, which is the whole
+point of the endpoint. Six of those seven share no word with the query — *The
+Time Machine* is the exception, and it ranks second, so even the cleaner
+example is not purely semantic.
+
+Where it is weakest is oblique description. `"lonely robot cleaning an
+abandoned planet"` is a precise summary of *WALL·E*, and WALL·E comes back at
+**rank 24** (0.324), below *Human Planet* and *Robot Overlords* — the query
+words "robot" and "planet" outweigh the situation they describe.
+
+Latency over 48 requests: **p50 37 ms, p90 137 ms**, min 19 ms. The first call
+in a process additionally pays ~0.5 s to load the encoder, which is deferred
+rather than paid at boot (README §9).
 
 ---
 
@@ -268,14 +294,38 @@ it does not push the system toward unpopular items.
 
 ### F4 — Compositional queries
 
-**Untestable here.** This failure mode is a property of semantic search, which
-is not shipped ([S4](#s4--natural-language-search)). Listing it as an observed
-failure would be dishonest — the claim is that *"like Inception but funny"*
-would anchor on Inception and ignore the modifier, which is the expected
-behaviour of single-vector embedding retrieval, but it has not been measured on
-this system.
+**Confirmed as a failure — and the cause we gave for it was wrong.**
 
-**Status: open, unverified.**
+`GET /search?q=like Inception but funny&k=8`:
+
+| # | Film | Cosine |
+|---|---|---|
+| 1 | Inception (2010) | 0.490 |
+| 2 | It Came from Hollywood (1982) | 0.430 |
+| 3 | Looking for Comedy in the Muslim World (2005) | 0.427 |
+| 4 | A Pigeon Sat on a Branch Reflecting on Existence (2014) | 0.424 |
+| 5 | Evolution (2001) | 0.410 |
+| 6 | Very Bad Things (1998) | 0.409 |
+| 7 | Honey, I Blew Up the Kid (1992) | 0.406 |
+| 8 | The Emoji Movie (2017) | 0.399 |
+
+The output is useless, so the failure is real. But the README previously
+asserted that the embedding *"anchors on Inception and ignores the
+negation/modifier"*, and that is not what happens: **seven of the eight results
+are comedies**. The modifier is not ignored — it dominates everything below
+rank 1.
+
+What actually fails is composition. The query is embedded as a single point
+roughly midway between "Inception" and "funny", and the neighbourhood of that
+midpoint contains films that are one or the other, not both. *Evolution* — a
+comedy sci-fi — is the closest thing to an intersection, at rank 5.
+
+This matters for the fix. Ignoring a modifier would be addressed by weighting
+terms; failing to intersect two constraints needs the query decomposed into
+separate constraints that are retrieved for and combined, which is what README
+§17 now describes.
+
+**Status: open, confirmed by measurement, cause corrected.**
 
 ---
 

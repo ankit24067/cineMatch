@@ -1,0 +1,17 @@
+{
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "hidden_size": 384,
+  "num_hidden_layers": 6,
+  "num_attention_heads": 12,
+  "intermediate_size": 1536,
+  "layer_norm_eps": 1e-12,
+  "max_position_embeddings": 512,
+  "max_seq_length": 256,
+  "vocab_size": 30522,
+  "pad_token_id": 0,
+  "cls_token": "[CLS]",
+  "sep_token": "[SEP]",
+  "unk_token": "[UNK]",
+  "pooling": "mean",
+  "normalise": true
+}

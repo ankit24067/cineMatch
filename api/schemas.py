@@ -85,6 +85,20 @@ class SimilarResponse(BaseModel):
     similarities: list[float]
 
 
+class SearchResponse(BaseModel):
+    """Semantic search results, most similar first.
+
+    `scores` are cosines in the MiniLM content space, so they are comparable
+    across queries but are not probabilities. A query no film sits near still
+    returns its k nearest neighbours, at correspondingly low scores.
+    """
+
+    query: str
+    results: list[Movie]
+    scores: list[float]
+    took_ms: float
+
+
 class HealthResponse(BaseModel):
     status: str
     n_items: int
@@ -93,5 +107,8 @@ class HealthResponse(BaseModel):
         description="False in deployments without the raw ratings; cold start only.",
     )
     artifacts_built_at: str | None = None
+    has_semantic_search: bool = Field(
+        description="False when the exported encoder is absent; /search returns 503.",
+    )
     weights: dict[str, float]
     mmr_lambda: float

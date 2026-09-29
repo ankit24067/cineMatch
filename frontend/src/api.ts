@@ -3,6 +3,7 @@ import type {
   Health,
   Movie,
   RecommendResponse,
+  SearchResponse,
   SimilarResponse,
 } from "./types";
 
@@ -50,9 +51,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<Health>("/health"),
 
-  search: (q: string, limit = 20) =>
+  // Title substring match, backing the seed picker: there, matching the
+  // literal characters the user is typing is the correct behaviour.
+  titleSearch: (q: string, limit = 20) =>
     request<Movie[]>(
       `/movies?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
+
+  // Meaning-based match over the content embeddings. Returns 503 when the
+  // deployment omits artifacts/encoder/, which `Health.has_semantic_search`
+  // reports up front so the UI can hide the box instead of failing on submit.
+  semanticSearch: (q: string, k = 12) =>
+    request<SearchResponse>(
+      `/search?q=${encodeURIComponent(q)}&k=${k}`,
     ),
 
   movie: (movieId: number) => request<Movie>(`/movies/${movieId}`),

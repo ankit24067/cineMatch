@@ -33,7 +33,7 @@ export function SeedPicker({ seeds, onChange, onSubmit, busy }: Props) {
     const ticket = ++latest.current;
     const timer = setTimeout(async () => {
       try {
-        const hits = await api.search(trimmed, 12);
+        const hits = await api.titleSearch(trimmed, 12);
 
         if (ticket !== latest.current) return;
         setResults(hits);

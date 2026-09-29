@@ -28,6 +28,13 @@ export interface RecommendResponse {
   took_ms: number;
 }
 
+export interface SearchResponse {
+  query: string;
+  results: Movie[];
+  scores: number[];
+  took_ms: number;
+}
+
 export interface SimilarResponse {
   movie: Movie;
   similar: Movie[];
@@ -39,6 +46,7 @@ export interface Health {
   n_items: number;
   n_users: number;
   has_interactions: boolean;
+  has_semantic_search: boolean;
   artifacts_built_at: string | null;
   weights: Record<string, number>;
   mmr_lambda: number;

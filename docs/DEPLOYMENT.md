@@ -4,8 +4,9 @@ Two services, deployed separately: a Dockerised FastAPI backend and a static
 frontend build. Both run on free tiers.
 
 Everything the API serves is committed to the repository, so there is no build
-step, no database, and no external service to provision. `artifacts/` is 25 MB
-in git; the image carries about 21 MB of it (see [What ships](#what-ships)).
+step, no database, and no external service to provision. `artifacts/` is 68 MB
+in git; the image carries about 64 MB of it (see [What ships](#what-ships)),
+of which the query encoder is 42 MB.
 
 ---
 
@@ -56,10 +57,14 @@ injects.
   This is the single worst thing about the free tier for a demo you are asking
   someone to click. If that matters, either upgrade the instance or warm it
   with an external ping before the demo.
-- **Memory.** Free instances get 512 MB. The artifacts are ~21 MB of numpy held
-  resident, and numpy/scipy/pandas dominate the rest. It fits, but the
-  Dockerfile runs a **single** uvicorn worker on purpose — a second worker
-  duplicates the artifacts in memory for no throughput gain at this scale.
+- **Memory.** Free instances get 512 MB. The recommender artifacts are ~22 MB of
+  numpy held resident from boot, and numpy/scipy/pandas dominate the rest. The
+  query encoder is the one large addition: it loads lazily on the first
+  `/search` and then holds ~101 MB for the life of the process, so a container
+  that has served a search sits far higher than one that has not. It fits, but
+  the Dockerfile runs a **single** uvicorn worker on purpose — a second worker
+  duplicates both the artifacts and the encoder for no throughput gain at this
+  scale.
 
 ---
 
@@ -100,7 +105,8 @@ The image contains only what the API reads at request time:
 | Included | Why |
 |---|---|
 | `api/` | The application |
-| `artifacts/` minus two files | `catalogue.parquet`, `content_emb.npy`, `item_factors.npy`, `user_factors.npy`, `neighbors_top50.npz`, `popularity.parquet`, `id_maps.json`, `manifest.json`, `evaluation.json`, `tuned_weights.json` |
+| `artifacts/` minus two files | `catalogue.parquet`, `content_emb.npy`, `item_factors.npy`, `user_factors.npy`, `neighbors_top50.npz`, `popularity.parquet`, `id_maps.json`, `manifest.json`, `evaluation.json`, `tuned_weights.json` (~22 MB) |
+| `artifacts/encoder/` | `weights.npz`, `vocab.txt`, `config.json` (42 MB) — the MiniLM tensors `api/encoder.py` reads to encode a `/search` query. Omit them and every other endpoint still serves; see below |
 | `scripts/` | Imported lazily by `api/artifacts.py`, and only when `data/raw` is mounted. Small, and copying it keeps that path working |
 
 Excluded by [`.dockerignore`](../.dockerignore):
@@ -111,9 +117,15 @@ Excluded by [`.dockerignore`](../.dockerignore):
 - `artifacts/documents_sample.json`, `frontend/`, `notebooks/`, `tests/`,
   `docs/`, `data/`, `.venv/`, `.git/`.
 
-No ML runtime is installed. `onnxruntime` and `tokenizers` are commented out of
-`requirements.txt` because nothing imports them while semantic search is
-unshipped, and together they pull in 124 MB. See README §14.
+No ML runtime is installed. `onnxruntime` and `tokenizers` stay commented out of
+`requirements.txt`: semantic search encodes its queries with `api/encoder.py`,
+which is a numpy reimplementation of MiniLM and needs neither. The image carries
+`artifacts/encoder/` (41 MB) instead of a 124 MB runtime. See README §9 and §14.
+
+The encoder loads lazily on the first `/search` request, not at boot, and adds
+about 101 MB resident once it does — worth knowing on a 512 MB free instance.
+A deployment that omits `artifacts/encoder/` still serves every other endpoint;
+`/search` returns `503` and `/health` reports `has_semantic_search: false`.
 
 ---
 

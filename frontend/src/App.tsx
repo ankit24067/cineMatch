@@ -4,6 +4,7 @@ import { api, ApiError, API_BASE } from "./api";
 import { EvaluationPanel } from "./components/EvaluationPanel";
 import { RecommendationCard } from "./components/RecommendationCard";
 import { SeedPicker } from "./components/SeedPicker";
+import { SemanticSearch } from "./components/SemanticSearch";
 import { SimilarDrawer } from "./components/SimilarDrawer";
 import type { Health, Movie, RecommendResponse } from "./types";
 
@@ -196,6 +197,13 @@ export default function App() {
               ))}
             </div>
           </section>
+        )}
+
+        {/* Hidden rather than shown-and-failing when the deployment ships no
+            encoder: /health tells us up front, so there is no reason to offer
+            a box that can only return 503. */}
+        {health?.has_semantic_search && (
+          <SemanticSearch onExplore={setExploring} />
         )}
 
         <section className="space-y-3 border-t border-[var(--color-edge)] pt-8">

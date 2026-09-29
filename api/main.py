@@ -20,6 +20,8 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.artifacts import ARTIFACT_DIR, Service, get_service
+from api.encoder import is_available as encoder_available
+from api.encoder import load_encoder
 from api.recommender import COLD_START_MINIMUM
 from api.schemas import (
     Explanation,
@@ -28,6 +30,7 @@ from api.schemas import (
     Recommendation,
     RecommendRequest,
     RecommendResponse,
+    SearchResponse,
     SimilarResponse,
 )
 
@@ -87,6 +90,7 @@ def index() -> dict:
             "GET /movies?q=&limit=",
             "GET /movies/{movie_id}",
             "GET /movies/{movie_id}/similar?k=",
+            "GET /search?q=&k=",
             "POST /recommend",
             "GET /evaluation",
         ],
@@ -102,6 +106,7 @@ def health() -> HealthResponse:
         n_users=service.catalogue.n_users,
         has_interactions=service.has_interactions,
         artifacts_built_at=service.manifest.get("built_at"),
+        has_semantic_search=encoder_available(),
         weights=service.recommender.weights,
         mmr_lambda=service.recommender.mmr_lambda,
     )
@@ -115,6 +120,45 @@ def search_movies(
     """Title search backing the seed picker. Popularity-ranked, prefix-first."""
     service = get_service()
     return [_movie(service, i) for i in service.titles_matching(q, limit)]
+
+
+@app.get("/search", response_model=SearchResponse)
+def semantic_search(
+    q: str = Query(min_length=2, max_length=300, description="Natural-language query."),
+    k: int = Query(default=10, ge=1, le=50),
+) -> SearchResponse:
+    """Free-text search over the content embeddings.
+
+    Distinct from `GET /movies`, which matches title substrings for the seed
+    picker. This one encodes the query with `api/encoder.py` and ranks films by
+    cosine against the same MiniLM space the documents were built in, so
+    "space movies that are actually about grief" can retrieve a film whose
+    title contains none of those words.
+
+    Quality is bounded by the documents: 97.4% carry a TMDB overview, so a
+    query about plot works, while one about cinematography or pacing has
+    little to match on. Section 15 records that limitation.
+    """
+    if not encoder_available():
+        raise HTTPException(
+            status_code=503,
+            detail="semantic search is unavailable: artifacts/encoder is not present",
+        )
+
+    started = time.perf_counter()
+    encoder = load_encoder()
+    vector = encoder.encode_one(q)
+    if not np.any(vector):
+        raise HTTPException(status_code=422, detail="query has no encodable content")
+
+    service = get_service()
+    pairs = service.recommender.search(vector, k)
+    return SearchResponse(
+        query=q,
+        results=[_movie(service, i) for i, _ in pairs],
+        scores=[round(s, 6) for _, s in pairs],
+        took_ms=round((time.perf_counter() - started) * 1000, 2),
+    )
 
 
 @app.get("/movies/{movie_id}", response_model=Movie)

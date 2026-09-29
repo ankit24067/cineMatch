@@ -116,10 +116,12 @@ All heavy computation is **precomputed offline** into artifacts. The serving lay
 ├── scripts/
 │   ├── download_data.py
 │   ├── build_artifacts.py
+│   ├── export_encoder.py  # MiniLM weights -> artifacts/encoder/
 │   └── evaluate.py
 ├── api/
 │   ├── main.py            # FastAPI app
 │   ├── recommender.py     # scoring + rerank + explain
+│   ├── encoder.py         # MiniLM forward pass in numpy, for /search
 │   └── schemas.py
 ├── frontend/              # React + Vite + Tailwind
 ├── docs/
@@ -204,7 +206,7 @@ For each recommendation we return the normalised contribution of each scoring co
 | Language | Python 3.11, TypeScript |
 | Data | pandas, NumPy, SciPy (sparse) |
 | Models | `implicit` (ALS), scikit-learn, sentence-transformers |
-| Runtime inference | None — the serving path is matrix slices and lookups only. ONNX Runtime is the planned encoder for semantic search, currently commented out of `requirements.txt` |
+| Runtime inference | MiniLM reimplemented in numpy (`api/encoder.py`) for query encoding only; every other path is matrix slices and lookups. No ML runtime is installed — no torch, no ONNX Runtime |
 | API | FastAPI, Uvicorn, Pydantic v2 |
 | Frontend | React 18, Vite, TypeScript, Tailwind CSS |
 | Deployment | Render (Docker) + Render static site or Vercel. Blueprint in [`render.yaml`](render.yaml); guide in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). **Config committed and verified, not yet deployed** |
@@ -261,6 +263,17 @@ python scripts/evaluate.py --tune   # grid-searches weights on the validation sp
 
 Without `--all` the script prints the resolved configuration and exits.
 
+### Rebuilding the query encoder
+
+```bash
+python -m scripts.export_encoder   # writes artifacts/encoder/ (41 MB)
+```
+
+Committed, so this is only needed if the embedding model changes — and if it
+does, rebuild `content_emb.npy` in the same pass. A query encoder and a document
+matrix from two different models still produce cosines, they are just
+meaningless. `tests/test_encoder.py` fails loudly if the two drift apart.
+
 ### Running the tests
 
 ```bash
@@ -296,8 +309,9 @@ Interactive docs at `/docs`. Summary:
 | `GET` | `/movies?q={query}&limit=20` | Title search, backing the seed picker |
 | `GET` | `/movies/{movie_id}` | Catalogue detail (title, year, genres, poster, overview) |
 | `GET` | `/movies/{movie_id}/similar?k=10` | Item-to-item "More like this" |
+| `GET` | `/search?q={query}&k=10` | Natural-language semantic search over the content embeddings |
 | `GET` | `/evaluation` | The measured offline results from `artifacts/evaluation.json` |
-| `GET` | `/health` | Liveness, artifact build time, and active weights |
+| `GET` | `/health` | Liveness, artifact build time, active weights, and encoder availability |
 
 **One recommend endpoint, two paths.** Passing `seed_movie_ids` is the cold-start
 path: the recommender is called with `user = -1`, which zeroes the ALS term and
@@ -359,26 +373,52 @@ at boot and reports it as `has_interactions` on `/health`:
 
 This is why the demo asks you to pick five films rather than logging you in.
 
-### Not yet shipped
+### Semantic search
 
-`GET /search` for natural-language semantic query ("space movies that are
-actually about grief") is **not implemented**. The embeddings support it — that
-is what `Recommender.search` is for — but answering a free-text query requires
-encoding it at request time. Three things are missing: the MiniLM ONNX export,
-the runtime to execute it (`onnxruntime`, excluded from `requirements.txt`
-because shipping a 124 MB dependency chain that nothing imports is worse than
-shipping neither — §14), and the exporter itself.
+`GET /search` answers a free-text query — "space movies that are actually about
+grief" — by encoding it into the same 384-d MiniLM space the documents live in
+and ranking films by cosine. It is distinct from `GET /movies`, which matches
+title substrings for the seed picker: a query whose words appear in no title
+returns nothing from `/movies` and real results from `/search`.
 
-`optimum[onnxruntime]` was previously pinned in `requirements-dev.txt` for that
-export. It has been removed, because the pin was never satisfiable:
-`sentence-transformers 6.0.0` requires `transformers >= 5.0`, while
-`optimum[onnxruntime] 1.23.3` requires `transformers < 4.47`. There is no
-overlap, so `pip install -r requirements-dev.txt` failed outright and `optimum`
-was in fact never installed. Adding semantic search means re-introducing an
-exporter with a pin compatible with the sentence-transformers version that
-built the committed embeddings.
+Encoding a query at request time normally means shipping an ML runtime, which
+this image does not have. `api/encoder.py` reimplements the MiniLM forward pass
+— WordPiece tokenisation, six transformer blocks, mean pooling, L2 normalise —
+in numpy and scipy, both of which are already serving dependencies.
+`scripts/export_encoder.py` writes the tensors it reads as float16.
 
-Title search covers the seed picker, which is what the UI needs today.
+**Semantic search therefore adds no dependency to the serving image.** The
+alternatives were `torch` (514 MB) or ONNX Runtime (124 MB with its sympy and
+tokenizers chain, plus a 90 MB fp32 graph); this costs 41 MB of committed
+artifact and nothing else. §14 records the reasoning.
+
+Measured against `sentence-transformers` 6.0.0 on 304 real film overviews and
+queries, worst-case cosine agreement is **0.999999**, and the exported
+tokenizer reproduces HuggingFace's `input_ids` exactly on 2,000 overviews. The
+regression test that guards this needs neither library: it re-encodes
+`documents_sample.json` and asserts the vectors still match the rows those
+documents produced in `content_emb.npy`.
+
+Costs, measured: 41 MB on disk, 101 MB resident once loaded, 0.5 s to load, and
+p50 37 ms per query with a p90 of 137 ms over 48 requests (the model runs on
+4–20 tokens, so BLAS call overhead dominates, not arithmetic — which is also
+why the tail is wide relative to the median). Loading is deferred to the first
+`/search` call
+rather than paid at boot, because 101 MB is a real fraction of a 512 MB free
+tier and most sessions never search. `/health` reports `has_semantic_search`,
+and `/search` returns `503` if the encoder artifacts are absent.
+
+What it does *not* fix is compositional queries — see [F4](#12-test-cases),
+which is now measured rather than assumed.
+
+Title search still backs the seed picker, where matching what the user is
+literally typing is the correct behaviour. The two are separate calls in the
+frontend — `api.titleSearch` for the picker, `api.semanticSearch` for the
+search box — and the search box submits on enter rather than debouncing per
+keystroke, since each query is a real forward pass rather than a pandas mask.
+The box is hidden entirely when `has_semantic_search` is false, so a
+deployment without the encoder degrades to the rest of the product rather than
+to a control that only returns 503.
 
 ---
 
@@ -450,7 +490,7 @@ Detailed walkthroughs with screenshots in [`docs/TEST_CASES.md`](docs/TEST_CASES
 | S1 | Warm user, coherent taste | User 553 — 65 liked films, 43% Crime/Thriller | Genre-consistent recs with 2–3 adjacent-genre surprises | ✅ 8 of 10 are Crime/Drama/Thriller (American History X, Memento, Se7en, Boondock Saints, Shawshank); the surprises are Ferris Bueller's Day Off and Amélie at ranks 9–10. 27 ms |
 | S2 | Cold start from 5 seeds | Toy Story · Pulp Fiction · The Matrix · Shawshank · Aliens | Sensible recs without any interaction history | ✅ Fight Club, Raiders of the Lost Ark, The Usual Suspects, Reservoir Dogs, Empire Strikes Back. `cold_start: true`, `als` contribution exactly `0.0` on every row, 7 ms |
 | S3 | Item-to-item similarity | `/movies/2571/similar` (The Matrix) | Thematic neighbours, not just same-franchise | ⚠️ Passes but imperfectly. Top hits are thematic — Fight Club (0.391), Gattaca (0.340), Blade-Runner-adjacent sci-fi — yet 3 of 8 slots are Star Wars entries. That is genuine co-viewing signal, not a title-match artifact, but it reads as franchise clustering to a user |
-| S4 | Natural-language search | `"mind-bending sci-fi"` | Semantically relevant results | Not shipped — see [§9](#9-api-reference) |
+| S4 | Natural-language search | `"mind-bending sci-fi"` | Semantically relevant results | ✅ Brainstorm (0.495), Mind Game, Paradox, Inception at rank 5. 22 ms. Partly lexical though — *A Beautiful Mind* rides the word "mind", not the concept. `"dystopian future ruled by machines"` is the cleaner win: The Terminator (0.491), The Time Machine (0.490), Terminator Genisys (0.479), Runaway, Equilibrium, Automata, Idiocracy — a list substring search returns **nothing** for, though *The Time Machine* does ride the literal "machines" |
 | S5 | Explanation fidelity | User 553, all 10 recs | Named seed item is genuinely in user history; components sum to 1 | ✅ Both verified programmatically across the slate. Rank 1: American History X — `als 0.455, item_cf 0.225, content 0.227, popularity 0.093`, *because you watched Fight Club* (confirmed present in the user's liked set) |
 | S6 | Eclectic user | User 115 — 73 liked films spanning 14 genres | MMR keeps the slate varied rather than collapsing to one genre | ✅ 13 distinct genres at λ=0.6 vs 10 at λ=1.0. The slate runs Goodfellas → Return of the Jedi → Blade Runner → Shrek → Rocky without losing coherence |
 
@@ -461,7 +501,7 @@ Detailed walkthroughs with screenshots in [`docs/TEST_CASES.md`](docs/TEST_CASES
 | F1 | **Extreme cold start** (1 seed) | Slate covers only one facet of taste. It does *not* collapse toward popularity — measured, popularity's share is **lower** at 1 seed (0.183) than at 5 (0.204) | One embedding is not a taste profile | Partially mitigated — UI labels it non-personalised |
 | F2 | **Franchise degeneracy** | *The Godfather* → *The Godfather Part II* | Technically correct, practically useless: co-occurrence is near-perfect for sequels | Open |
 | F3 | **Popularity bias** | Long-tail films rarely surface | ALS is trained on skewed interaction counts | Partially mitigated by MMR + novelty term |
-| F4 | **Compositional queries** | *"like Inception but funny"* | Embedding anchors on *Inception*, ignores the negation/modifier | Open — needs query decomposition |
+| F4 | **Compositional queries** | *"like Inception but funny"* → *Inception* itself, then unrelated comedies (*It Came from Hollywood*, *The Emoji Movie*) | Measured: the modifier is **not** ignored — 7 of the top 8 are comedies — but the two concepts are averaged into a midpoint rather than intersected, so nothing returned is both | Open — needs query decomposition |
 | F5 | **Stale catalogue** | Nothing after 2018 | Dataset boundary, not a model defect | Not fixable without new data |
 | F6 | **Grey-sheep users** | Users with idiosyncratic taste get poor recs | Too few similar users for CF to work | Open — content weight helps marginally |
 
@@ -470,11 +510,19 @@ We consider F2 and F4 the most interesting: both are cases where the *metrics lo
 F1 is a case of the reverse — a failure mode we asserted from intuition and that
 measurement contradicted. The original claim here was that a single seed
 collapses the output toward popularity; running it showed the opposite, and the
-row above now states what the numbers actually say. F4 remains unverified
-because it depends on the unshipped semantic search, and F6 is not isolated by
-the current cohorts at all: history *length* is not taste *idiosyncrasy*. Both
-are marked as such in [`docs/TEST_CASES.md`](docs/TEST_CASES.md) rather than
-being presented as measured.
+row above now states what the numbers actually say.
+
+F4 has now had the same treatment, since shipping `/search` finally made it
+testable. The failure is real, but the stated *cause* was wrong: we claimed the
+embedding anchors on *Inception* and ignores "funny". It does not ignore it —
+almost everything returned is a comedy. What it cannot do is intersect the two
+constraints, so it retrieves around the midpoint of "Inception" and "funny" and
+returns films that are one or the other. That is a sharper argument for query
+decomposition than the original guess was.
+
+F6 remains not isolated by the current cohorts at all: history *length* is not
+taste *idiosyncrasy*, and it is marked as such in
+[`docs/TEST_CASES.md`](docs/TEST_CASES.md) rather than presented as measured.
 
 ---
 
@@ -495,7 +543,7 @@ being presented as measured.
 |---|---|---|
 | **Hybrid over single model** | Pure ALS; pure content | Neither covers both cold and warm users. Hybrid degrades gracefully as history shrinks |
 | **Precompute artifacts offline** | Train or compute on request | Keeps p95 latency in the tens of milliseconds and the container small enough for free-tier hosting |
-| **No ML runtime in the serving image at all** | Ship `torch` + `sentence-transformers`; ship ONNX Runtime | Embeddings are precomputed, so serving needs no encoder. Excluding torch keeps 519 MB out of the image (measured: torch 514 MB, sentence-transformers 5 MB). ONNX Runtime was pinned as the lighter replacement, but nothing imports it while semantic search is unshipped, and it costs a further 124 MB (36 MB itself, plus sympy at 69 MB and the tokenizers/huggingface-hub chain), so it is commented out rather than shipped dead. Serving dependencies now total 372 MB installed, dominated by scipy, pandas and pyarrow |
+| **No ML runtime in the serving image at all** | Ship `torch` + `sentence-transformers`; ship ONNX Runtime | Document embeddings are precomputed, so only the *query* needs encoding at request time — six transformer blocks over a handful of tokens. Neither runtime is proportionate to that: torch costs 519 MB (measured: torch 514, sentence-transformers 5), ONNX Runtime 124 MB (36 itself, sympy 69, plus the tokenizers/huggingface-hub chain) and a 90 MB fp32 graph. Reimplementing the forward pass in numpy costs 41 MB of float16 weights and no new dependency, and agrees with `sentence-transformers` to a cosine of 0.999999 (§9). Serving dependencies stay at 372 MB installed, dominated by scipy, pandas and pyarrow |
 | **Top-50 neighbour truncation** | Full similarity matrix | 247× smaller artifact: 380 MB dense → 1.5 MB. The NDCG cost is unquantified — the full-matrix variant was never evaluated |
 | **MMR reranking, shipped despite an accuracy cost** | Ship raw relevance ranking | A slate of ten near-identical films is a worse product than a slightly less "accurate" varied one |
 | **Temporal split** | Random 80/20 | Random splits leak future interactions and inflate results. We preferred defensible numbers to flattering ones |
@@ -513,6 +561,8 @@ being presented as measured.
 - **No sequential/temporal modelling.** We ignore the *order* of a user's viewing history, which discards real signal a session-based or transformer model would exploit.
 - **No fairness or provider-side analysis.** We do not measure whether the system disadvantages particular genres, eras, or regions.
 - **Explanations are faithful but shallow.** They report which component dominated, not a causal account of *why* that component fired.
+- **Semantic search retrieves on plot, not craft.** 97.4% of documents carry a TMDB overview, which describes what happens in a film — so a query about story works, and one about cinematography, pacing or tone has almost nothing to match against. Queries also partly match on literal words: *"mind-bending sci-fi"* surfaces *A Beautiful Mind*.
+- **Search cannot compose constraints** — see F4. It embeds a whole query as one point, so "like X but Y" retrieves the midpoint of X and Y rather than their intersection.
 - **Single-region deployment**, no CDN for the API, no horizontal scaling.
 - **Cold start for new *items*** is unhandled — a film with no ratings can only ever be reached through content similarity.
 
@@ -520,10 +570,14 @@ being presented as measured.
 
 ## 16. Comparison with Netflix
 
-The UI is deliberately modelled on Netflix's browse experience: a hero banner, horizontally scrolling genre rails, and reason-labelled rows.
+The UI borrows two things from Netflix's browse experience: a horizontally
+scrolling rail of recommendations, and explanations phrased as *"because you
+watched…"*. It is not a clone of that layout — there is no hero banner, and
+there is one rail, not a page of genre rows. The differences below are the
+substantive comparison; this section is about architecture, not chrome.
 
 ### Similarities
-- **Rail-based browse layout** with reason-carrying row titles (*"Because you watched…"*), which is Netflix's primary explanation mechanism.
+- **Horizontally scrolling rail** for the recommendation slate. Netflix's browse page is many such rails selected per user; CineMatch renders one. Per-row reason titles are the mechanism we did *not* build — the explanation lives per-card in a drawer instead (see the personalisation-surface row below).
 - **Hybrid retrieval-then-rank pipeline** — candidate generation followed by a scoring pass, the same broad shape as Netflix's production architecture.
 - **Diversity as an explicit objective**, not an accident of ranking.
 - **Cold-start onboarding** via a taste picker, mirroring Netflix's original signup flow.
@@ -553,7 +607,7 @@ No artwork personalisation, no contextual or session awareness, no exploration/e
 
 ## 17. Future Improvements
 
-**Modelling** — sequential/session-aware recommenders; two-tower retrieval with FAISS; learning-to-rank reranker (LambdaMART or a small neural ranker); query decomposition for compositional natural-language search (addressing F4); franchise-collapse penalty (addressing F2).
+**Modelling** — sequential/session-aware recommenders; two-tower retrieval with FAISS; learning-to-rank reranker (LambdaMART or a small neural ranker); query decomposition for compositional natural-language search, splitting "like X but Y" into constraints that are intersected rather than averaged (addressing the measured F4); franchise-collapse penalty (addressing F2).
 
 **Engineering** — incremental artifact rebuilds on a schedule; Redis caching for hot users; model registry and versioned artifacts; proper observability (per-endpoint latency, recommendation distribution drift); CI running the evaluation suite so metric regressions block merges.
 

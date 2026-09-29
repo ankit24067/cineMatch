@@ -40,6 +40,47 @@ def test_unknown_movie_is_404(client):
     assert client.get("/movies/99999999").status_code == 404
 
 
+def test_semantic_search_retrieves_without_title_overlap(client):
+    """The point of /search: match on meaning, not on the words in the title.
+
+    None of "dystopian", "future", "technology" or "controls" appears in the
+    titles this is expected to surface, so a substring searcher scores zero
+    here. Asserted on the set rather than the order, since the ranking between
+    two films of near-identical cosine is not a stable property.
+    """
+    body = client.get("/search", params={"q": "dystopian future ruled by machines", "k": 10}).json()
+    titles = {m["title"] for m in body["results"]}
+    assert titles & {"Equilibrium", "THX 1138", "Idiocracy", "Terminator, The"}, titles
+
+
+def test_semantic_search_scores_are_descending_cosines(client):
+    body = client.get("/search", params={"q": "a heist that goes wrong", "k": 8}).json()
+    scores = body["scores"]
+    assert len(scores) == len(body["results"]) == 8
+    assert scores == sorted(scores, reverse=True)
+    assert all(-1.0 <= s <= 1.0 for s in scores)
+
+
+def test_semantic_search_is_distinct_from_title_search(client):
+    """A query no title contains returns nothing from /movies and results from /search."""
+    query = "lonely robot cleaning an abandoned planet"
+    assert client.get("/movies", params={"q": query}).json() == []
+    assert client.get("/search", params={"q": query, "k": 5}).json()["results"]
+
+
+def test_semantic_search_rejects_a_too_short_query(client):
+    assert client.get("/search", params={"q": "x"}).status_code == 422
+
+
+def test_semantic_search_respects_k(client):
+    body = client.get("/search", params={"q": "animated film about talking animals", "k": 3})
+    assert len(body.json()["results"]) == 3
+
+
+def test_health_reports_semantic_search_availability(client):
+    assert client.get("/health").json()["has_semantic_search"] is True
+
+
 def test_similar_returns_requested_count(client, seed_ids):
     body = client.get(f"/movies/{seed_ids[0]}/similar", params={"k": 8}).json()
     assert len(body["similar"]) == 8
