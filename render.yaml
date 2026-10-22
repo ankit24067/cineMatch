@@ -19,7 +19,7 @@ services:
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
-        value: https://cinematch-api.onrender.com
+        value: https://cinematch-api-12yc.onrender.com
     headers:
       - path: /assets/*
         name: Cache-Control
