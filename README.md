@@ -1,8 +1,6 @@
 # CineMatch — A Hybrid, Explainable Movie Recommendation System
 
 > **Live demo:** https://cinematch-web-t27c.onrender.com
-> **API docs:** https://cinematch-api-12yc.onrender.com/docs
-> **Repository:** https://github.com/ankit24067/cineMatch
 
 **New here? Start at the demo link, pick 5 films you like on the landing screen, and hit *Get Recommendations*.** Every recommendation card has a **"Why this?"** button that opens the actual scoring breakdown behind it.
 
