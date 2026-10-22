@@ -24,3 +24,7 @@ Thumbs.db
 
 *.docx
 
+
+# screenshots
+image.png
+/*.png
