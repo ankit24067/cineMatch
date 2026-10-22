@@ -1,7 +1,7 @@
 # CineMatch — A Hybrid, Explainable Movie Recommendation System
 
-> **Live demo:** ⟨TODO: deployment URL⟩
-> **API docs:** ⟨TODO: backend URL⟩/docs
+> **Live demo:** https://cinematch-web-t27c.onrender.com
+> **API docs:** https://cinematch-api-12yc.onrender.com/docs
 > **Repository:** https://github.com/ankit24067/cineMatch
 
 **New here? Start at the demo link, pick 5 films you like on the landing screen, and hit *Get Recommendations*.** Every recommendation card has a **"Why this?"** button that opens the actual scoring breakdown behind it.
@@ -622,9 +622,6 @@ No artwork personalisation, no contextual or session awareness, no exploration/e
 - **MovieLens data** © GroupLens Research, University of Minnesota. Used under the [MovieLens terms of use](https://files.grouplens.org/datasets/movielens/ml-latest-small-README.html). **Redistribution is not permitted** — raw data is excluded from this repository and fetched at setup time.
   > F. M. Harper and J. A. Konstan. 2015. *The MovieLens Datasets: History and Context.* ACM TiiS 5, 4.
 - **Poster imagery** courtesy of [The Movie Database (TMDB)](https://www.themoviedb.org/). This product uses the TMDB API but is not endorsed or certified by TMDB.
-- **Netflix** is a trademark of Netflix, Inc. This project is an independent educational exercise with no affiliation to or endorsement by Netflix.
+- **Netflix** is a trademark of Netflix, Inc. This project is independent, with no affiliation to or endorsement by Netflix.
 - Project code released under the MIT Licence — see [`LICENSE`](LICENSE).
 
----
-
-*Built as a technical assignment submission by ⟨TODO: your name⟩ · ⟨TODO: date⟩*
